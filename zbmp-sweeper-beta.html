@@ -66,7 +66,7 @@
         <button id="pauseBtn" disabled>⏸ Pause</button> <button id="exportGif" class="btn">⬇ GIF</button>
 
         <span class="badge">Z slider</span>
-        <input id="zSlider" type="range" min="0" max="100" step="0.1" value="0" disabled />
+        <input id="zSlider" type="range" min="0" max="103" step="0.1" value="0" disabled />
         <span id="zLabel" class="small">–</span>
       </div>
 
@@ -351,7 +351,7 @@
       const len2 = Math.max(0, zmax - b);
       const total = len1 + len2;
       if (total > 0) {
-        const frac = Math.max(0, Math.min(1, sliderValue / 100));
+        const frac = Math.max(0, Math.min(1, Math.min(sliderValue,100)/100));
         const x = frac * total;
         let t;
         if (x <= len1) t = zmin + x;
@@ -361,7 +361,7 @@
     }
 
     // Fallback: linear mapping
-    const t = zmin + ((zmax - zmin) * (sliderValue / 100));
+    const t = zmin + ((zmax - zmin) * (Math.min(sliderValue,100)/100));
     return Math.round(t);
   }
 
@@ -384,6 +384,17 @@
 
   function drawFrameBySlider(sliderValue) {
     if (!active) return;
+
+    // Final "hold" zone: if slider is beyond 100, show the fully built BMP (no thresholding).
+    if (sliderValue > 100) {
+      const { w, h, baseRGBA } = active;
+      const img = new ImageData(w, h);
+      img.data.set(baseRGBA);
+      ctx.putImageData(img, 0, 0);
+      zLabel.textContent = `BMP (final) (slider=${sliderValue}/103)`;
+      lastThr = null;
+      return;
+    }
 
     const { w, h, baseRGBA, depths } = active;
     const rev = reverseMode.value === "1";
@@ -429,7 +440,7 @@
     }
 
     ctx.putImageData(img, 0, 0);
-    zLabel.textContent = `threshold=${thr} (slider=${sliderValue}/100)`;
+    zLabel.textContent = `threshold=${thr} (slider=${sliderValue}/103)`;
     lastThr = thr;
   }
 
@@ -756,6 +767,7 @@
 </script>
 
 
+
 <script>
 (function(){
   const btn = document.getElementById("exportGif");
@@ -766,7 +778,7 @@
     btn.disabled = !!disabled;
   }
 
-  btn.addEventListener("click", async ()=>{
+  btn.addEventListener("click", ()=>{
     if(!window.GIF){
       alert("GIF export: gif.js not loaded.");
       return;
@@ -778,46 +790,19 @@
       return;
     }
 
-    const stepsEl = document.getElementById("steps");
-    const speedEl = document.getElementById("speed");
-    const steps = Math.max(1, Number(stepsEl?.value || 100));
-    const speed = Math.max(1, Number(speedEl?.value || 30));
+    const steps = Math.max(1, Number(document.getElementById("steps")?.value || 100));
+    const speed = Math.max(1, Number(document.getElementById("speed")?.value || 30));
 
-    // IMPORTANT: If you open this HTML via file://, some browsers block loading the worker script from CDN,
-    // which makes rendering appear to "hang". Use a local webserver (e.g. `python -m http.server`) to avoid that.
-    setBtn("Preparing…", true);
-
-    // Prefer relative workerScript (same-origin) if you place gif.worker.js next to the html.
-    // Fallback to CDN.
-    const workerCdn = "https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js";
-    const workerRel = "gif.worker.js";
-    const workerScript = workerRel;
+    setBtn("Rendering… 0%", true);
 
     const gif = new GIF({
       workers: 2,
-      // higher number = faster but larger file / more dithering
+      // higher = faster/rougher; lower = nicer/slower. This is a good middle ground.
       quality: 20,
-      workerScript
+      workerScript: "https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js"
     });
 
-    // If relative worker isn't found, gif.js won't error nicely. We detect "no progress" and retry with CDN.
-    let progressSeen = false;
-    let progressTimeout = setTimeout(()=>{
-      if(!progressSeen){
-        console.warn("No GIF progress detected; retrying with CDN worker. If still stuck, run via a local webserver.");
-        try{
-          const gif2 = new GIF({workers: 2, quality: 20, workerScript: workerCdn});
-          runEncode(gif2);
-        }catch(e){
-          alert("GIF export failed to start. Tip: run this page via a local webserver (python -m http.server).");
-          setBtn("⬇ GIF", false);
-        }
-      }
-    }, 1500);
-
     gif.on("progress", p=>{
-      progressSeen = true;
-      clearTimeout(progressTimeout);
       setBtn(`Rendering… ${Math.round(p*100)}%`, true);
     });
 
@@ -832,45 +817,44 @@
       setBtn("⬇ GIF", false);
     });
 
-    function runEncode(g){
-      // reuse current slider if present
-      const slider = document.getElementById("zSlider") || document.querySelector("input[type=range]");
-      const oldVal = slider ? slider.value : null;
+    gif.on("abort", ()=>{
+      alert("GIF export aborted.");
+      setBtn("⬇ GIF", false);
+    });
 
-      // Capture frames as fast as possible (no real-time waiting),
-      // while keeping playback timing via the per-frame `delay`.
-      for(let i=0;i<=steps;i++){
-        const v = (i/steps)*100;
-        if(slider){
-          slider.value = v;
-          slider.dispatchEvent(new Event("input"));
-        }
-        g.addFrame(canvas, {copy:true, delay:speed});
-      }
+    // Build frames as fast as possible (no real-time waiting).
+    const slider = document.getElementById("zSlider") || document.querySelector("input[type=range]");
+    const oldVal = slider ? slider.value : null;
 
-      // Hold the final fully-built image for the last 3 frames
+    for(let i=0;i<=steps;i++){
+      const v = (i/steps)*100; // sweep zone 0..100
       if(slider){
-        slider.value = 100;
+        slider.value = String(v);
         slider.dispatchEvent(new Event("input"));
       }
-      for(let k=0;k<3;k++){
-        g.addFrame(canvas, {copy:true, delay:speed});
-      }
-
-      // Restore slider
-      if(slider && oldVal !== null){
-        slider.value = oldVal;
-        slider.dispatchEvent(new Event("input"));
-      }
-
-      g.render();
+      gif.addFrame(canvas, {copy:true, delay:speed});
     }
 
-    setBtn("Rendering… 0%", true);
-    runEncode(gif);
+    // Hold final BMP-only image for last 3 frames (slider > 100 triggers BMP mode)
+    if(slider){
+      slider.value = "103";
+      slider.dispatchEvent(new Event("input"));
+    }
+    for(let k=0;k<3;k++){
+      gif.addFrame(canvas, {copy:true, delay:speed});
+    }
+
+    // restore slider
+    if(slider && oldVal !== null){
+      slider.value = oldVal;
+      slider.dispatchEvent(new Event("input"));
+    }
+
+    gif.render();
   });
 })();
 </script>
+
 
 
 </body>
