@@ -40,3 +40,10 @@ TODO:
 * Configurable sweep highlight color
 * Disablable sweep highlighting
 * Start greyscale, and then sweep to color?
+
+## About This Fork
+
+This fork was created for the **3D Movie Maker Remastered Project**.
+It is used for development, customization, and testing related to the remastered version of the original 3D Movie Maker.
+For more information, please visit:
+[Project Website](https://phantomcrew.eu/3DMM/)
