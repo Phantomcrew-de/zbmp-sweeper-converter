@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ZBMP/MBMP Sweeper (Browser) — English UI</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial, sans-serif; }
+    body { margin: 16px; background:#0b0d12; color:#e7e9ee; }
+    h1 { margin: 0 0 8px; font-size: 18px; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+    .card { background:#121624; border:1px solid #252b3d; border-radius:12px; padding:12px; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+    .card h2 { margin:0 0 8px; font-size:14px; opacity:.9; }
+    label { display:block; font-size:12px; opacity:.85; margin:8px 0 4px; }
+    input[type="range"] { width: 360px; }
+    input[type="number"] { width: 120px; }
+    button { background:#2a3452; border:1px solid #3a466d; color:#e7e9ee; padding:8px 10px; border-radius:10px; cursor:pointer; }
+    button:hover { background:#34406a; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    select, input[type="number"], input[type="text"] {
+      background:#0e1220; border:1px solid #2a3350; color:#e7e9ee;
+      padding:6px 8px; border-radius:10px;
+    }
+    .small { font-size:12px; opacity:.75; line-height:1.35; }
+    .stack { display:flex; flex-direction:column; gap:8px; }
+    .inline { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    canvas { background:#000; border-radius:12px; border:1px solid #252b3d; image-rendering: pixelated; }
+    pre { max-height: 240px; overflow:auto; margin:0; padding:10px; background:#0e1220; border:1px solid #252b3d; border-radius:12px; font-size:12px; }
+    .pairs { max-height: 260px; overflow:auto; border:1px solid #252b3d; border-radius:12px; padding:10px; background:#0e1220; }
+    .pairItem { padding:6px 8px; border-radius:10px; cursor:pointer; border:1px solid transparent; }
+    .pairItem:hover { background:#121a34; }
+    .pairItem.active { border-color:#5a6cff; background:#151f3f; }
+    .badge { display:inline-block; padding:2px 8px; border:1px solid #2a3350; border-radius:999px; font-size:11px; opacity:.85; margin-left:6px; }
+    .hr { height:1px; background:#252b3d; margin:6px 0; }
+    code { color:#b8c0ff; }
+  </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+</head>
+<body>
+  <h1>ZBMP/MBMP Sweeper (local in browser)</h1>
+
+  <div class="row">
+    <div class="card stack" style="min-width:360px; flex: 1 1 380px;">
+      <h2>Load files</h2>
+      <div class="small">
+        Select multiple files (e.g. <code>2.MBMP</code> + <code>2.ZBMP</code> + optional <code>2.BMP</code>).<br>
+        Grouped by <b>BaseName</b> (filename without extension).
+      </div>
+      <div class="inline">
+        <input id="fileInput" type="file" multiple />
+        <button id="clearBtn">Reset</button>
+      </div>
+
+      <label>Detected pairs</label>
+      <div class="pairs" id="pairsList"></div>
+
+      <label>Log</label>
+      <pre id="log"></pre>
+    </div>
+
+    <div class="card stack" style="flex: 2 1 540px;">
+      <h2>Viewer</h2>
+
+      <div class="inline">
+        <button id="playBtn" disabled>▶ Play</button>
+        <button id="pauseBtn" disabled>⏸ Pause</button> <button id="exportGif" class="btn">⬇ GIF</button>
+
+        <span class="badge">Z slider</span>
+        <input id="zSlider" type="range" min="0" max="100" step="0.1" value="0" disabled />
+        <span id="zLabel" class="small">–</span>
+      </div>
+
+      <div class="inline">
+        <label style="margin:0;">Speed (ms / tick)</label>
+        <input id="speedMs" type="number" min="5" max="2000" step="5" value="30" />
+
+        <label style="margin:0;">Steps (levels)</label>
+        <input id="steps" type="number" min="2" max="5000" step="1" value="100" />
+
+        <label style="margin:0;">Step mode</label>
+        <select id="stepMode">
+          <option value="bySlider" selected>Slider (0..100) / steps</option>
+          <option value="byZ">Z range / steps</option>
+        </select>
+      </div>
+
+      <div class="inline">
+        <label style="margin:0;">Highlight</label>
+        <select id="highlightMode">
+          <option value="none">off</option>
+          <option value="edge" selected>highlight new pixels</option>
+        </select>
+
+        <label style="margin:0;">Reverse</label>
+        <select id="reverseMode">
+          <option value="0" selected>normal</option>
+          <option value="1">reverse</option>
+        </select>
+
+        <label style="margin:0;">Image source</label>
+        <select id="imageSource" disabled>
+          <option value="auto" selected>auto (BMP if available)</option>
+          <option value="bmp">BMP only</option>
+          <option value="mbmp">MBMP fallback only</option>
+        </select>
+      </div>
+
+      <div class="inline">
+        <label style="margin:0;">Dimensions</label>
+        <span class="small">Default: 544×306</span>
+        <label style="margin:0;">W</label><input id="wInput" type="number" min="1" value="544" />
+        <label style="margin:0;">H</label><input id="hInput" type="number" min="1" value="306" />
+        <button id="reparseBtn" disabled>Reparse</button>
+      </div>
+
+      <div class="hr"></div>
+
+      <canvas id="cv" width="544" height="306"></canvas>
+
+      <div class="small">
+        Playback now uses <b>Steps</b>: with 100 steps it runs through 100 levels from near→far (or the other way around).
+        The slider still lets you scrub at any time.
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const logEl = $("log");
+  function log(msg) {
+    logEl.textContent += msg + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function hexPreview(u8, n=64) {
+    return Array.from(u8.slice(0, n)).map(b => b.toString(16).padStart(2,"0")).join(" ");
+  }
+
+  const fileInput = $("fileInput");
+  const clearBtn = $("clearBtn");
+  const pairsList = $("pairsList");
+
+  const playBtn = $("playBtn");
+  const pauseBtn = $("pauseBtn");
+  const zSlider = $("zSlider");
+  const zLabel = $("zLabel");
+  const speedMs = $("speedMs");
+  const stepsEl = $("steps");
+  const stepModeEl = $("stepMode");
+  const highlightMode = $("highlightMode");
+  const reverseMode = $("reverseMode");
+
+  const wInput = $("wInput");
+  const hInput = $("hInput");
+  const reparseBtn = $("reparseBtn");
+  const imageSource = $("imageSource");
+
+  const cv = $("cv");
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+
+  // State
+  const filesByBase = new Map(); // baseName -> { mbmp?:File, zbmp?:File, bmp?:File, other:File[] }
+  let activeBase = null;
+  let active = null; // parsed pair
+
+  let timer = null;
+  let lastThr = null;
+
+  // playback state
+  let playIndex = 0;
+
+  function resetAll() {
+    filesByBase.clear();
+    activeBase = null;
+    active = null;
+    pairsList.innerHTML = "";
+    logEl.textContent = "";
+    stopPlayback();
+    setUIEnabled(false);
+    ctx.clearRect(0,0,cv.width,cv.height);
+    log("Reset.");
+  }
+
+  function setUIEnabled(on) {
+    playBtn.disabled = !on;
+    pauseBtn.disabled = !on;
+    zSlider.disabled = !on;
+    reparseBtn.disabled = !on;
+    imageSource.disabled = !on;
+  }
+
+  function stopPlayback() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  function baseNameOf(fileName) {
+    const idx = fileName.lastIndexOf(".");
+    return idx > 0 ? fileName.slice(0, idx) : fileName;
+  }
+  function extOf(fileName) {
+    const idx = fileName.lastIndexOf(".");
+    return idx > 0 ? fileName.slice(idx+1).toLowerCase() : "";
+  }
+
+  function addFile(file) {
+    const base = baseNameOf(file.name);
+    const ext = extOf(file.name);
+    if (!filesByBase.has(base)) filesByBase.set(base, { other: [] });
+
+    const bucket = filesByBase.get(base);
+    if (ext === "zbmp") bucket.zbmp = file;
+    else if (ext === "mbmp") bucket.mbmp = file;
+    else if (ext === "bmp") bucket.bmp = file;
+    else bucket.other.push(file);
+  }
+
+  function renderPairsList() {
+    pairsList.innerHTML = "";
+    const bases = Array.from(filesByBase.keys()).sort((a,b)=>a.localeCompare(b, "en"));
+    if (bases.length === 0) {
+      pairsList.innerHTML = `<div class="small">No files loaded yet.</div>`;
+      return;
+    }
+
+    for (const base of bases) {
+      const b = filesByBase.get(base);
+      const item = document.createElement("div");
+      item.className = "pairItem" + (base === activeBase ? " active" : "");
+      const tags = [];
+      if (b.mbmp) tags.push("MBMP");
+      if (b.zbmp) tags.push("ZBMP");
+      if (b.bmp) tags.push("BMP");
+      if (b.other.length) tags.push(`${b.other.length}x other`);
+      item.textContent = base + " ";
+      for (const t of tags) {
+        const s = document.createElement("span");
+        s.className = "badge";
+        s.textContent = t;
+        item.appendChild(s);
+      }
+      item.onclick = () => loadPair(base);
+      pairsList.appendChild(item);
+    }
+  }
+
+  async function readAsArrayBuffer(file) {
+    return await file.arrayBuffer();
+  }
+
+  // --- BMP decoding (browser-native) ---
+  async function decodeBmpToRGBA(file) {
+    const blob = file.slice(0, file.size, file.type || "image/bmp");
+    let bmp;
+    try {
+      bmp = await createImageBitmap(blob);
+    } catch {
+      bmp = await new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+        img.src = url;
+      });
+    }
+    const w = bmp.width, h = bmp.height;
+    const tmp = document.createElement("canvas");
+    tmp.width = w; tmp.height = h;
+    const tctx = tmp.getContext("2d");
+    tctx.drawImage(bmp, 0, 0);
+    const imgData = tctx.getImageData(0,0,w,h);
+    return { w, h, rgba: imgData.data };
+  }
+
+  // --- ZBMP decoding (12-byte header + uint16 little-endian) ---
+  function decodeZbmp(u8, w, h) {
+    if (u8.byteLength < 12 + w*h*2) {
+      throw new Error(`ZBMP too small: ${u8.byteLength} bytes, expected at least ${12 + w*h*2}`);
+    }
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    const depths = new Uint16Array(w*h);
+    let off = 12;
+    for (let i=0;i<w*h;i++,off+=2) {
+      depths[i] = dv.getUint16(off, true);
+    }
+    let zmin = 65535, zmax = 0;
+    for (let i=0;i<depths.length;i++) {
+      const v = depths[i];
+      if (v < zmin) zmin = v;
+      if (v > zmax) zmax = v;
+    }
+    return { depths, zmin, zmax };
+  }
+
+  // --- MBMP fallback: letzte w*h Bytes als Indizes, Palette optional 1024 Bytes davor (BGRA) ---
+  function decodeMbmpFallback(u8, w, h) {
+    const total = u8.byteLength;
+    const pixBytes = w*h;
+    const palBytes = 1024;
+
+    if (total < pixBytes) throw new Error(`MBMP too small for ${w}x${h} (needs ${pixBytes} bytes)`);
+
+    const pixelOff = total - pixBytes;
+    const pixels = u8.slice(pixelOff, pixelOff + pixBytes);
+
+    let palette = null;
+    if (total >= pixBytes + palBytes) {
+      const palOff = pixelOff - palBytes;
+      const pal = u8.slice(palOff, palOff + palBytes);
+      palette = new Uint8ClampedArray(256*4);
+      for (let i=0;i<256;i++) {
+        const b = pal[i*4+0], g = pal[i*4+1], r = pal[i*4+2];
+        palette[i*4+0]=r; palette[i*4+1]=g; palette[i*4+2]=b; palette[i*4+3]=255;
+      }
+    }
+    return { pixels, palette, pixelOff };
+  }
+
+  function indicesToRGBA(pixels, paletteRGBA, w, h) {
+    const out = new Uint8ClampedArray(w*h*4);
+    for (let i=0;i<w*h;i++) {
+      const idx = pixels[i];
+      const p = idx*4;
+      out[i*4+0] = paletteRGBA[p+0];
+      out[i*4+1] = paletteRGBA[p+1];
+      out[i*4+2] = paletteRGBA[p+2];
+      out[i*4+3] = 255;
+    }
+    return out;
+  }
+
+  function defaultGrayPalette() {
+    const pal = new Uint8ClampedArray(256*4);
+    for (let i=0;i<256;i++) {
+      pal[i*4+0]=i; pal[i*4+1]=i; pal[i*4+2]=i; pal[i*4+3]=255;
+    }
+    return pal;
+  }
+
+  // --- Threshold helpers ---
+  function sliderToThreshold(sliderValue) {
+    // sliderValue: 0..100 (step 0.1 => ~1000 discrete positions)
+    const zmin = (active.zmin_vis ?? active.zmin);
+    const zmax = (active.zmax_vis ?? active.zmax);
+
+    // If we detected a "dead" depth gap (no pixels), compress it out so the whole slider travel is useful.
+    if (active && active.gap && Number.isFinite(active.gap.a) && Number.isFinite(active.gap.b) && active.gap.b > active.gap.a) {
+      const a = active.gap.a; // last occupied depth before gap
+      const b = active.gap.b; // first occupied depth after gap (e.g. background plate)
+      const len1 = Math.max(0, a - zmin);
+      const len2 = Math.max(0, zmax - b);
+      const total = len1 + len2;
+      if (total > 0) {
+        const frac = Math.max(0, Math.min(1, sliderValue / 100));
+        const x = frac * total;
+        let t;
+        if (x <= len1) t = zmin + x;
+        else t = b + (x - len1);
+        return Math.round(t);
+      }
+    }
+
+    // Fallback: linear mapping
+    const t = zmin + ((zmax - zmin) * (sliderValue / 100));
+    return Math.round(t);
+  }
+
+  function stepIndexToSliderValue(stepIndex) {
+    // stepIndex: 0..steps -> map depending on step mode
+    const steps = Math.max(2, parseInt(stepsEl.value, 10) || 100);
+    const i = Math.max(0, Math.min(steps, stepIndex));
+    if (stepModeEl.value === "bySlider") {
+      // evenly spaced in slider domain
+      return +(((i / steps) * 100).toFixed(1));
+    }
+    // byZ: choose threshold evenly in z-domain and convert back to slider approx
+    const { zmin, zmax } = active;
+    const thr = zmin + ((zmax - zmin) * (i / steps));
+    // convert threshold -> slider (inverse mapping)
+    if (zmax === zmin) return 0;
+    const sv = ((thr - zmin) / (zmax - zmin)) * 100;
+    return +((Math.max(0, Math.min(100, sv))).toFixed(1));
+  }
+
+  function drawFrameBySlider(sliderValue) {
+    if (!active) return;
+
+    const { w, h, baseRGBA, depths } = active;
+    const rev = reverseMode.value === "1";
+
+    const thr = sliderToThreshold(sliderValue);
+
+    // lastThr for highlight band
+    const prevThr = (lastThr === null) ? thr : lastThr;
+
+    const img = new ImageData(w, h);
+    const dst = img.data;
+
+    const doHL = highlightMode.value === "edge";
+
+    for (let i=0;i<w*h;i++) {
+      const z = depths[i];
+      let visible;
+      let isNew = false;
+
+      if (!rev) {
+        visible = !(z > thr);
+        if (doHL) isNew = (z <= thr && z > prevThr);
+      } else {
+        visible = !(z < thr);
+        if (doHL) isNew = (z >= thr && z < prevThr);
+      }
+
+      const di = i*4;
+
+      if (!visible) {
+        dst[di+0]=0; dst[di+1]=0; dst[di+2]=0; dst[di+3]=0;
+      } else {
+        dst[di+0] = baseRGBA[di+0];
+        dst[di+1] = baseRGBA[di+1];
+        dst[di+2] = baseRGBA[di+2];
+        dst[di+3] = 255;
+
+        if (isNew) {
+          dst[di+0] = Math.min(255, dst[di+0] + 80);
+          dst[di+2] = Math.min(255, dst[di+2] + 120);
+        }
+      }
+    }
+
+    ctx.putImageData(img, 0, 0);
+    zLabel.textContent = `threshold=${thr} (slider=${sliderValue}/100)`;
+    lastThr = thr;
+  }
+
+  function startPlayback() {
+    if (!active) return;
+    stopPlayback();
+
+    const steps = Math.max(2, parseInt(stepsEl.value, 10) || 100);
+    playIndex = 0;
+    lastThr = null;
+
+    const tickMs = Math.max(5, parseInt(speedMs.value, 10) || 30);
+
+    timer = setInterval(() => {
+      const sv = stepIndexToSliderValue(playIndex);
+      zSlider.value = String(sv);
+      drawFrameBySlider(sv);
+
+      playIndex++;
+      if (playIndex > steps) {
+        stopPlayback();
+      }
+    }, tickMs);
+  }
+
+  // --- Pair loading ---
+  async function loadPair(base) {
+    activeBase = base;
+    renderPairsList();
+    stopPlayback();
+    lastThr = null;
+    playIndex = 0;
+
+    const bucket = filesByBase.get(base);
+    if (!bucket) return;
+
+    const w = Math.max(1, parseInt(wInput.value, 10) || 544);
+    const h = Math.max(1, parseInt(hInput.value, 10) || 306);
+
+    log(`\n=== Loading BaseName "${base}" ===`);
+    log(`W×H = ${w}×${h}`);
+
+    let mbmpFile = bucket.mbmp || null;
+    let zbmpFile = bucket.zbmp || null;
+    let bmpFile  = bucket.bmp  || null;
+
+    for (const f of bucket.other) {
+      const ext = extOf(f.name);
+      if (!mbmpFile && ext.includes("mbmp")) mbmpFile = f;
+      if (!zbmpFile && ext.includes("zbmp")) zbmpFile = f;
+      if (!bmpFile  && ext === "bmp") bmpFile = f;
+    }
+
+    if (!zbmpFile) {
+      log(`ERROR: No ZBMP found for "${base}".`);
+      active = null;
+      setUIEnabled(false);
+      imageSource.disabled = true;
+      return;
+    }
+
+    const zbmpBuf = new Uint8Array(await readAsArrayBuffer(zbmpFile));
+    log(`ZBMP: ${zbmpFile.name} (${zbmpBuf.byteLength} bytes)`);
+    let z;
+    try {
+      z = decodeZbmp(zbmpBuf, w, h);
+      log(`ZBMP OK. zmin=${z.zmin}, zmax=${z.zmax}`);
+    } catch (e) {
+      log(`ERROR while parsing ZBMP: ${e.message}`);
+      active = null;
+      setUIEnabled(false);
+      imageSource.disabled = true;
+      return;
+    }
+
+    let baseRGBA = null;
+    let used = null;
+
+    const pref = imageSource.value || "auto";
+
+    if ((pref === "auto" || pref === "bmp") && bmpFile) {
+      log(`BMP found: ${bmpFile.name} (browser decode)`);
+      try {
+        const bmp = await decodeBmpToRGBA(bmpFile);
+        if (bmp.w !== w || bmp.h !== h) {
+          log(`WARN: BMP dimensions ${bmp.w}×${bmp.h} ≠ ${w}×${h}. Viewer will use the BMP size.`);
+          wInput.value = bmp.w;
+          hInput.value = bmp.h;
+          cv.width = bmp.w; cv.height = bmp.h;
+        } else {
+          cv.width = w; cv.height = h;
+        }
+        baseRGBA = bmp.rgba;
+        used = `BMP:${bmpFile.name}`;
+      } catch (e) {
+        log(`ERROR decoding BMP: ${e.message}`);
+      }
+    }
+
+    if (!baseRGBA && (pref === "auto" || pref === "mbmp")) {
+      if (!mbmpFile) {
+        log(`ERROR: No BMP available and no MBMP for fallback.`);
+        active = null;
+        setUIEnabled(false);
+        imageSource.disabled = true;
+        return;
+      }
+      const mbmpBuf = new Uint8Array(await readAsArrayBuffer(mbmpFile));
+      log(`MBMP: ${mbmpFile.name} (${mbmpBuf.byteLength} bytes)`);
+      log(`MBMP head(64): ${hexPreview(mbmpBuf, 64)}`);
+
+      try {
+        const m = decodeMbmpFallback(mbmpBuf, cv.width || w, cv.height || h);
+        const pal = m.palette || defaultGrayPalette();
+        baseRGBA = indicesToRGBA(m.pixels, pal, cv.width || w, cv.height || h);
+        cv.width = cv.width || w; cv.height = cv.height || h;
+        used = `MBMP-fallback:${mbmpFile.name} (pixelOff=${m.pixelOff}, pal=${m.palette ? "embedded" : "gray"})`;
+        log(`MBMP fallback OK. pixelOff=${m.pixelOff}. Palette=${m.palette ? "embedded" : "gray"}`);
+      } catch (e) {
+        log(`ERROR MBMP fallback: ${e.message}`);
+        active = null;
+        setUIEnabled(false);
+        imageSource.disabled = true;
+        return;
+      }
+    }
+
+    if (!baseRGBA) {
+      log(`ERROR: Could not create a base image (BMP/MBMP).`);
+      active = null;
+      setUIEnabled(false);
+      imageSource.disabled = true;
+      return;
+    }
+
+    const finalW = cv.width, finalH = cv.height;
+    if (finalW !== w || finalH !== h) {
+      try {
+        const z2 = decodeZbmp(zbmpBuf, finalW, finalH);
+        z = z2;
+        log(`ZBMP reparsed with ${finalW}×${finalH}: zmin=${z.zmin}, zmax=${z.zmax}`);
+      } catch (e) {
+        log(`WARN: Could not re-read ZBMP with BMP dimensions: ${e.message}`);
+      }
+    }
+
+    active = {
+      base,
+      w: cv.width,
+      h: cv.height,
+      baseRGBA,
+      depths: z.depths,
+      zmin: z.zmin,
+      zmax: z.zmax,
+      // visible-only z-range (ignores fully transparent pixels)
+      zmin_vis: null,
+      zmax_vis: null,
+      used
+    };
+
+    // compute visible z-range so the slider travel is fully useful
+    {
+      let mn = Infinity, mx = -Infinity;
+      const d = active.depths;
+      const rgba = active.baseRGBA;
+      for (let i=0;i<active.w*active.h;i++) {
+        if (rgba[i*4+3] > 0) { // alpha > 0
+          const zz = d[i];
+          if (zz < mn) mn = zz;
+          if (zz > mx) mx = zz;
+        }
+      }
+      if (mn !== Infinity && mx !== -Infinity) {
+        active.zmin_vis = mn;
+        active.zmax_vis = mx;
+      }
+    }
+
+    // detect largest empty depth gap (often: last foreground object -> background plate)
+    // We compress that gap out of the slider mapping so there is no "nothing happens" region.
+    active.gap = null;
+    {
+      const d = active.depths;
+      const rgba = active.baseRGBA;
+      const N = active.w * active.h;
+
+      // Collect depths for visible pixels (alpha>0). Keep it efficient by sampling if very large.
+      // (Typical sizes are fine, but this keeps it snappy for bigger images.)
+      const depths = [];
+      const stride = (N > 600000) ? Math.ceil(N / 400000) : 1; // cap samples ~400k
+      for (let i = 0; i < N; i += stride) {
+        if (rgba[i*4+3] > 0) depths.push(d[i]);
+      }
+      if (depths.length > 10) {
+        depths.sort((a,b)=>a-b);
+
+        // Find the largest gap between consecutive occupied depths.
+        let bestGap = 0;
+        let bestA = null, bestB = null;
+
+        const zmin = (active.zmin_vis ?? active.zmin);
+        const zmax = (active.zmax_vis ?? active.zmax);
+        const span = Math.max(1, zmax - zmin);
+
+        // Require the gap to be "meaningful" relative to overall span to avoid false positives.
+        const minGap = Math.max(8, Math.floor(span * 0.01)); // at least 1% of span or 8 units
+        for (let i=0;i<depths.length-1;i++) {
+          const a = depths[i];
+          const b = depths[i+1];
+          const g = b - a;
+          if (g > bestGap) {
+            bestGap = g; bestA = a; bestB = b;
+          }
+        }
+
+        // Also require that both sides have a reasonable number of samples (not just outliers).
+        if (bestGap >= minGap) {
+          // count samples near each side (simple split count)
+          let leftCount = 0;
+          for (let i=0;i<depths.length;i++) {
+            if (depths[i] <= bestA) leftCount++;
+            else break;
+          }
+          const rightCount = depths.length - leftCount;
+          if (leftCount >= 20 && rightCount >= 20) {
+            active.gap = { a: bestA, b: bestB, size: bestGap, minGap };
+            log(`Depth gap detected and compressed: a=${bestA} b=${bestB} (gap=${bestGap})`);
+          }
+        }
+      }
+    }
+
+    // slider UI
+    zSlider.value = "0";
+    zSlider.min = "0";
+    zSlider.max = "100";
+    zSlider.step = "0.1";
+    lastThr = null;
+
+    setUIEnabled(true);
+    imageSource.disabled = false;
+
+    log(`Active: ${base} | Source=${used}`);
+    drawFrameBySlider(0);
+  }
+
+  // --- Events ---
+  fileInput.addEventListener("change", (e) => {
+    const list = Array.from(e.target.files || []);
+    if (list.length === 0) return;
+
+    log(`Loading ${list.length} file(s)...`);
+    for (const f of list) addFile(f);
+
+    renderPairsList();
+
+    if (!activeBase) {
+      const bases = Array.from(filesByBase.keys()).sort((a,b)=>a.localeCompare(b, "en"));
+      for (const base of bases) {
+        const b = filesByBase.get(base);
+        const hasZ = !!(b.zbmp || b.other.some(x => extOf(x.name).includes("zbmp")));
+        const hasImg = !!(b.bmp || b.mbmp || b.other.some(x => extOf(x.name).includes("mbmp") || extOf(x.name)==="bmp"));
+        if (hasZ && hasImg) { loadPair(base); break; }
+      }
+    }
+  });
+
+  clearBtn.addEventListener("click", resetAll);
+
+  playBtn.addEventListener("click", () => {
+    if (!active) return;
+    startPlayback();
+  });
+
+  pauseBtn.addEventListener("click", () => stopPlayback());
+
+  zSlider.addEventListener("input", () => {
+    stopPlayback();
+    lastThr = null; // scrub: highlight band reset
+    drawFrameBySlider(parseFloat(zSlider.value));
+  });
+
+  speedMs.addEventListener("change", () => {
+    if (timer) startPlayback();
+  });
+
+  stepsEl.addEventListener("change", () => {
+    // keep current frame but reset play
+    stopPlayback();
+  });
+
+  stepModeEl.addEventListener("change", () => {
+    stopPlayback();
+  });
+
+  highlightMode.addEventListener("change", () => {
+    if (!active) return;
+    stopPlayback();
+    lastThr = null;
+    drawFrameBySlider(parseFloat(zSlider.value));
+  });
+
+  reverseMode.addEventListener("change", () => {
+    if (!active) return;
+    stopPlayback();
+    lastThr = null;
+    drawFrameBySlider(parseFloat(zSlider.value));
+  });
+
+  reparseBtn.addEventListener("click", () => {
+    if (!activeBase) return;
+    loadPair(activeBase);
+  });
+
+  imageSource.addEventListener("change", () => {
+    if (!activeBase) return;
+    loadPair(activeBase);
+  });
+
+  // init
+  resetAll();
+  log("Ready. Select files…");
+})();
+</script>
+
+
+<script>
+(function(){
+  const btn = document.getElementById("exportGif");
+  if(!btn) return;
+
+  function setBtn(label, disabled){
+    btn.textContent = label;
+    btn.disabled = !!disabled;
+  }
+
+  btn.addEventListener("click", async ()=>{
+    if(!window.GIF){
+      alert("GIF export: gif.js not loaded.");
+      return;
+    }
+
+    const canvas = document.querySelector("canvas");
+    if(!canvas){
+      alert("GIF export: No canvas found.");
+      return;
+    }
+
+    const stepsEl = document.getElementById("steps");
+    const speedEl = document.getElementById("speed");
+    const steps = Math.max(1, Number(stepsEl?.value || 100));
+    const speed = Math.max(1, Number(speedEl?.value || 30));
+
+    // IMPORTANT: If you open this HTML via file://, some browsers block loading the worker script from CDN,
+    // which makes rendering appear to "hang". Use a local webserver (e.g. `python -m http.server`) to avoid that.
+    setBtn("Preparing…", true);
+
+    // Prefer relative workerScript (same-origin) if you place gif.worker.js next to the html.
+    // Fallback to CDN.
+    const workerCdn = "https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js";
+    const workerRel = "gif.worker.js";
+    const workerScript = workerRel;
+
+    const gif = new GIF({
+      workers: 2,
+      // higher number = faster but larger file / more dithering
+      quality: 20,
+      workerScript
+    });
+
+    // If relative worker isn't found, gif.js won't error nicely. We detect "no progress" and retry with CDN.
+    let progressSeen = false;
+    let progressTimeout = setTimeout(()=>{
+      if(!progressSeen){
+        console.warn("No GIF progress detected; retrying with CDN worker. If still stuck, run via a local webserver.");
+        try{
+          const gif2 = new GIF({workers: 2, quality: 20, workerScript: workerCdn});
+          runEncode(gif2);
+        }catch(e){
+          alert("GIF export failed to start. Tip: run this page via a local webserver (python -m http.server).");
+          setBtn("⬇ GIF", false);
+        }
+      }
+    }, 1500);
+
+    gif.on("progress", p=>{
+      progressSeen = true;
+      clearTimeout(progressTimeout);
+      setBtn(`Rendering… ${Math.round(p*100)}%`, true);
+    });
+
+    gif.on("finished", blob=>{
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "zbmp_sweep.gif";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      setBtn("⬇ GIF", false);
+    });
+
+    function runEncode(g){
+      // reuse current slider if present
+      const slider = document.getElementById("zSlider") || document.querySelector("input[type=range]");
+      const oldVal = slider ? slider.value : null;
+
+      // Capture frames as fast as possible (no real-time waiting),
+      // while keeping playback timing via the per-frame `delay`.
+      for(let i=0;i<=steps;i++){
+        const v = (i/steps)*100;
+        if(slider){
+          slider.value = v;
+          slider.dispatchEvent(new Event("input"));
+        }
+        g.addFrame(canvas, {copy:true, delay:speed});
+      }
+
+      // Hold the final fully-built image for the last 3 frames
+      if(slider){
+        slider.value = 100;
+        slider.dispatchEvent(new Event("input"));
+      }
+      for(let k=0;k<3;k++){
+        g.addFrame(canvas, {copy:true, delay:speed});
+      }
+
+      // Restore slider
+      if(slider && oldVal !== null){
+        slider.value = oldVal;
+        slider.dispatchEvent(new Event("input"));
+      }
+
+      g.render();
+    }
+
+    setBtn("Rendering… 0%", true);
+    runEncode(gif);
+  });
+})();
+</script>
+
+
+</body>
+</html>
