@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ZBMP/MBMP Sweeper (Browser)</title>
+  <title>ZBMP/MBMP Sweeper (Browser) — English UI</title>
   <style>
     :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial, sans-serif; }
     body { margin: 16px; background:#0b0d12; color:#e7e9ee; }
@@ -36,21 +36,21 @@
   </style>
 </head>
 <body>
-  <h1>ZBMP/MBMP Sweeper (lokal im Browser)</h1>
+  <h1>ZBMP/MBMP Sweeper (local in browser)</h1>
 
   <div class="row">
     <div class="card stack" style="min-width:360px; flex: 1 1 380px;">
-      <h2>Dateien laden</h2>
+      <h2>Load files</h2>
       <div class="small">
-        Wähle mehrere Dateien (z.B. <code>2.MBMP</code> + <code>2.ZBMP</code> + optional <code>2.BMP</code>).<br>
-        Gruppierung nach <b>BaseName</b> (Dateiname ohne Endung).
+        Select multiple files (e.g. <code>2.MBMP</code> + <code>2.ZBMP</code> + optional <code>2.BMP</code>).<br>
+        Grouped by <b>BaseName</b> (filename without extension).
       </div>
       <div class="inline">
         <input id="fileInput" type="file" multiple />
         <button id="clearBtn">Reset</button>
       </div>
 
-      <label>Gefundene Paare</label>
+      <label>Detected pairs</label>
       <div class="pairs" id="pairsList"></div>
 
       <label>Log</label>
@@ -64,30 +64,30 @@
         <button id="playBtn" disabled>▶ Play</button>
         <button id="pauseBtn" disabled>⏸ Pause</button>
 
-        <span class="badge">Z-Slider</span>
+        <span class="badge">Z slider</span>
         <input id="zSlider" type="range" min="0" max="1000" value="0" disabled />
         <span id="zLabel" class="small">–</span>
       </div>
 
       <div class="inline">
-        <label style="margin:0;">Speed (ms / Tick)</label>
+        <label style="margin:0;">Speed (ms / tick)</label>
         <input id="speedMs" type="number" min="5" max="2000" step="5" value="30" />
 
-        <label style="margin:0;">Steps (Abstufungen)</label>
+        <label style="margin:0;">Steps (levels)</label>
         <input id="steps" type="number" min="2" max="5000" step="1" value="100" />
 
-        <label style="margin:0;">Step-Modus</label>
+        <label style="margin:0;">Step mode</label>
         <select id="stepMode">
-          <option value="bySlider" selected>Slider (0..1000) / Steps</option>
-          <option value="byZ">Z-Range / Steps</option>
+          <option value="bySlider" selected>Slider (0..1000) / steps</option>
+          <option value="byZ">Z range / steps</option>
         </select>
       </div>
 
       <div class="inline">
         <label style="margin:0;">Highlight</label>
         <select id="highlightMode">
-          <option value="none">aus</option>
-          <option value="edge" selected>neue Pixel hervorheben</option>
+          <option value="none">off</option>
+          <option value="edge" selected>highlight new pixels</option>
         </select>
 
         <label style="margin:0;">Reverse</label>
@@ -96,20 +96,20 @@
           <option value="1">reverse</option>
         </select>
 
-        <label style="margin:0;">Bildquelle</label>
+        <label style="margin:0;">Image source</label>
         <select id="imageSource" disabled>
-          <option value="auto" selected>auto (BMP falls vorhanden)</option>
-          <option value="bmp">nur BMP</option>
-          <option value="mbmp">nur MBMP-Fallback</option>
+          <option value="auto" selected>auto (BMP if available)</option>
+          <option value="bmp">BMP only</option>
+          <option value="mbmp">MBMP fallback only</option>
         </select>
       </div>
 
       <div class="inline">
-        <label style="margin:0;">Dimensionen</label>
-        <span class="small">Standard: 544×306</span>
+        <label style="margin:0;">Dimensions</label>
+        <span class="small">Default: 544×306</span>
         <label style="margin:0;">W</label><input id="wInput" type="number" min="1" value="544" />
         <label style="margin:0;">H</label><input id="hInput" type="number" min="1" value="306" />
-        <button id="reparseBtn" disabled>Neu interpretieren</button>
+        <button id="reparseBtn" disabled>Reparse</button>
       </div>
 
       <div class="hr"></div>
@@ -117,8 +117,8 @@
       <canvas id="cv" width="544" height="306"></canvas>
 
       <div class="small">
-        Playback nutzt jetzt <b>Steps</b>: bei 100 Steps läuft er in 100 Abstufungen von nah→fern (oder umgekehrt).
-        Slider scrubbt weiterhin jederzeit.
+        Playback now uses <b>Steps</b>: with 100 steps it runs through 100 levels from near→far (or the other way around).
+        The slider still lets you scrub at any time.
       </div>
     </div>
   </div>
@@ -216,9 +216,9 @@
 
   function renderPairsList() {
     pairsList.innerHTML = "";
-    const bases = Array.from(filesByBase.keys()).sort((a,b)=>a.localeCompare(b, "de"));
+    const bases = Array.from(filesByBase.keys()).sort((a,b)=>a.localeCompare(b, "en"));
     if (bases.length === 0) {
-      pairsList.innerHTML = `<div class="small">Noch keine Dateien geladen.</div>`;
+      pairsList.innerHTML = `<div class="small">No files loaded yet.</div>`;
       return;
     }
 
@@ -274,7 +274,7 @@
   // --- ZBMP decoding (12-byte header + uint16 little-endian) ---
   function decodeZbmp(u8, w, h) {
     if (u8.byteLength < 12 + w*h*2) {
-      throw new Error(`ZBMP zu klein: ${u8.byteLength} bytes, erwartet mind. ${12 + w*h*2}`);
+      throw new Error(`ZBMP too small: ${u8.byteLength} bytes, expected at least ${12 + w*h*2}`);
     }
     const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
     const depths = new Uint16Array(w*h);
@@ -297,7 +297,7 @@
     const pixBytes = w*h;
     const palBytes = 1024;
 
-    if (total < pixBytes) throw new Error(`MBMP zu klein für ${w}x${h} (braucht ${pixBytes} bytes)`);
+    if (total < pixBytes) throw new Error(`MBMP too small for ${w}x${h} (needs ${pixBytes} bytes)`);
 
     const pixelOff = total - pixBytes;
     const pixels = u8.slice(pixelOff, pixelOff + pixBytes);
@@ -448,7 +448,7 @@
     const w = Math.max(1, parseInt(wInput.value, 10) || 544);
     const h = Math.max(1, parseInt(hInput.value, 10) || 306);
 
-    log(`\n=== Lade BaseName "${base}" ===`);
+    log(`\n=== Loading BaseName "${base}" ===`);
     log(`W×H = ${w}×${h}`);
 
     let mbmpFile = bucket.mbmp || null;
@@ -463,7 +463,7 @@
     }
 
     if (!zbmpFile) {
-      log(`FEHLER: Kein ZBMP für "${base}" gefunden.`);
+      log(`ERROR: No ZBMP found for "${base}".`);
       active = null;
       setUIEnabled(false);
       imageSource.disabled = true;
@@ -475,9 +475,9 @@
     let z;
     try {
       z = decodeZbmp(zbmpBuf, w, h);
-      log(`ZBMP ok. zmin=${z.zmin}, zmax=${z.zmax}`);
+      log(`ZBMP OK. zmin=${z.zmin}, zmax=${z.zmax}`);
     } catch (e) {
-      log(`FEHLER beim ZBMP-Parsing: ${e.message}`);
+      log(`ERROR while parsing ZBMP: ${e.message}`);
       active = null;
       setUIEnabled(false);
       imageSource.disabled = true;
@@ -490,11 +490,11 @@
     const pref = imageSource.value || "auto";
 
     if ((pref === "auto" || pref === "bmp") && bmpFile) {
-      log(`BMP gefunden: ${bmpFile.name} (Browser decode)`);
+      log(`BMP found: ${bmpFile.name} (browser decode)`);
       try {
         const bmp = await decodeBmpToRGBA(bmpFile);
         if (bmp.w !== w || bmp.h !== h) {
-          log(`WARN: BMP Maße ${bmp.w}×${bmp.h} ≠ ${w}×${h}. Viewer wird auf BMP gesetzt.`);
+          log(`WARN: BMP dimensions ${bmp.w}×${bmp.h} ≠ ${w}×${h}. Viewer will use the BMP size.`);
           wInput.value = bmp.w;
           hInput.value = bmp.h;
           cv.width = bmp.w; cv.height = bmp.h;
@@ -504,13 +504,13 @@
         baseRGBA = bmp.rgba;
         used = `BMP:${bmpFile.name}`;
       } catch (e) {
-        log(`FEHLER BMP decode: ${e.message}`);
+        log(`ERROR decoding BMP: ${e.message}`);
       }
     }
 
     if (!baseRGBA && (pref === "auto" || pref === "mbmp")) {
       if (!mbmpFile) {
-        log(`FEHLER: Keine BMP vorhanden und keine MBMP zum Fallback.`);
+        log(`ERROR: No BMP available and no MBMP for fallback.`);
         active = null;
         setUIEnabled(false);
         imageSource.disabled = true;
@@ -526,9 +526,9 @@
         baseRGBA = indicesToRGBA(m.pixels, pal, cv.width || w, cv.height || h);
         cv.width = cv.width || w; cv.height = cv.height || h;
         used = `MBMP-fallback:${mbmpFile.name} (pixelOff=${m.pixelOff}, pal=${m.palette ? "embedded" : "gray"})`;
-        log(`MBMP-fallback ok. pixelOff=${m.pixelOff}. Palette=${m.palette ? "embedded" : "gray"}`);
+        log(`MBMP fallback OK. pixelOff=${m.pixelOff}. Palette=${m.palette ? "embedded" : "gray"}`);
       } catch (e) {
-        log(`FEHLER MBMP-fallback: ${e.message}`);
+        log(`ERROR MBMP fallback: ${e.message}`);
         active = null;
         setUIEnabled(false);
         imageSource.disabled = true;
@@ -537,7 +537,7 @@
     }
 
     if (!baseRGBA) {
-      log(`FEHLER: Konnte kein Basisbild erzeugen (BMP/MBMP).`);
+      log(`ERROR: Could not create a base image (BMP/MBMP).`);
       active = null;
       setUIEnabled(false);
       imageSource.disabled = true;
@@ -549,9 +549,9 @@
       try {
         const z2 = decodeZbmp(zbmpBuf, finalW, finalH);
         z = z2;
-        log(`ZBMP neu interpretiert mit ${finalW}×${finalH}: zmin=${z.zmin}, zmax=${z.zmax}`);
+        log(`ZBMP reparsed with ${finalW}×${finalH}: zmin=${z.zmin}, zmax=${z.zmax}`);
       } catch (e) {
-        log(`WARN: ZBMP konnte nicht mit BMP-Maßen neu gelesen werden: ${e.message}`);
+        log(`WARN: Could not re-read ZBMP with BMP dimensions: ${e.message}`);
       }
     }
 
@@ -575,7 +575,7 @@
     setUIEnabled(true);
     imageSource.disabled = false;
 
-    log(`Aktiv: ${base} | Source=${used}`);
+    log(`Active: ${base} | Source=${used}`);
     drawFrameBySlider(0);
   }
 
@@ -584,13 +584,13 @@
     const list = Array.from(e.target.files || []);
     if (list.length === 0) return;
 
-    log(`Lade ${list.length} Datei(en)...`);
+    log(`Loading ${list.length} file(s)...`);
     for (const f of list) addFile(f);
 
     renderPairsList();
 
     if (!activeBase) {
-      const bases = Array.from(filesByBase.keys()).sort((a,b)=>a.localeCompare(b, "de"));
+      const bases = Array.from(filesByBase.keys()).sort((a,b)=>a.localeCompare(b, "en"));
       for (const base of bases) {
         const b = filesByBase.get(base);
         const hasZ = !!(b.zbmp || b.other.some(x => extOf(x.name).includes("zbmp")));
@@ -654,7 +654,7 @@
 
   // init
   resetAll();
-  log("Bereit. Dateien auswählen…");
+  log("Ready. Select files…");
 })();
 </script>
 </body>
