@@ -1,7 +1,11 @@
-ZBMP Sweeper
+ZBMP Web Sweeper & Converter
 =============
 
-This generates zbuffer-sweeping GIFs from ZBMP/MBMP backgrounds from Microsoft 3D Movie Maker.
+This generates zbuffer-sweeping preview from ZBMP/MBMP backgrounds from Microsoft 3D Movie Maker.
+
+[[Try Converter]](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-converter.html)
+[[Try Sweeper]](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-sweeper.html)
+
 
 ![example zbmp sweep gif](http://i.imgur.com/EQBpRHX.gif)
 
