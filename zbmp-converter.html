@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ZBMP → Z-Pass Converter</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 18px; background: #111; color: #eee; }
+    h1 { margin: 0 0 10px; font-size: 20px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin: 10px 0; }
+    .card { background: #1b1b1b; border: 1px solid #333; border-radius: 12px; padding: 12px; }
+    label { font-size: 12px; color: #bbb; display:block; margin-bottom: 6px; }
+    input[type="number"], select {
+      background: #0f0f0f; color: #eee; border: 1px solid #333; border-radius: 8px;
+      padding: 8px; outline: none; width: 180px;
+    }
+    input[type="file"] { color: #ddd; }
+    button {
+      background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 10px;
+      padding: 10px 12px; cursor: pointer;
+    }
+    button:hover { background: #343434; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .list { display: grid; gap: 12px; margin-top: 14px; }
+    .item { display: grid; grid-template-columns: 220px 1fr; gap: 12px; }
+    canvas { width: 220px; height: auto; border-radius: 10px; border: 1px solid #333; background: #000; }
+    .meta { font-size: 12px; color: #bbb; line-height: 1.45; }
+    .meta b { color: #fff; font-weight: 600; }
+    .actions { display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items:end; }
+    .small { font-size: 12px; color: #aaa; }
+    .warn { color: #ffcc66; }
+    .ok { color: #9be28f; }
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #444; margin-left: 6px; font-size: 11px; color:#ccc;}
+    .divider { height: 1px; background: #2a2a2a; margin: 10px 0; }
+    .inline { display:flex; gap: 8px; flex-wrap: wrap; align-items:end; }
+    .w120 { width: 120px !important; }
+  </style>
+</head>
+<body>
+  <h1>ZBMP → Z-Pass Converter (Grayscale / RGB Ramp)</h1>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Select .ZBMP files (multiple)</label>
+        <input id="fileInput" type="file" multiple accept=".zbmp,.ZBMP,application/octet-stream" />
+        <div class="small">Assumption: 12-byte header, then 16-bit LE depth, size 544×306.</div>
+      </div>
+
+      <div>
+        <label>Render mode</label>
+        <select id="mode">
+          <option value="gray">Grayscale</option>
+          <option value="rgb">Red → Green → Blue ramp</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Auto range</label>
+        <select id="autoRange">
+          <option value="robust">Robust percentiles</option>
+          <option value="minmax">Min/Max (per file)</option>
+          <option value="globalMinMax">Global Min/Max (all files)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Robust low %</label>
+        <input id="pLow" type="number" min="0" max="49.9" step="0.1" value="1.0" />
+      </div>
+
+      <div>
+        <label>Robust high %</label>
+        <input id="pHigh" type="number" min="50.1" max="100" step="0.1" value="99.0" />
+      </div>
+
+      <div>
+        <label>Ignore zero (NoData)</label>
+        <select id="ignoreZero">
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Invert (near = bright)</label>
+        <select id="invert">
+          <option value="0">No</option>
+          <option value="1">Yes</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Dither method (8-bit)</label>
+        <select id="ditherMethod">
+          <option value="off">Off</option>
+          <option value="noise">Noise (deterministic)</option>
+          <option value="bayer8">Ordered Bayer 8×8</option>
+          <option value="fs">Floyd–Steinberg (grayscale, slow)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Dither strength (0–3)</label>
+        <input id="ditherStrength" type="number" min="0" max="3" step="0.1" value="1.0" />
+      </div>
+
+      <div>
+        <label>Export format</label>
+        <select id="fmt">
+          <option value="png8">PNG (8-bit)</option>
+          <option value="jpg">JPG</option>
+          <option value="png16">PNG (16-bit)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>JPG quality</label>
+        <input id="jpgQ" type="number" step="0.05" min="0.1" max="1" value="0.92" />
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="autoRenderBtn" disabled>Auto-range + Render all</button>
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="renderAllBtn" disabled>Render all (keep ranges)</button>
+      </div>
+
+      <div>
+        <label>&nbsp;</label>
+        <button id="zipBtn" disabled>Download all as ZIP</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+    <div id="status" class="small warn">Select ZBMP files to begin.</div>
+  </div>
+
+  <div id="list" class="list"></div>
+
+  <!-- ZIP + Deflate (for 16-bit PNG + ZIP) -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+  <script>
+    // ====== Fixed format assumptions ======
+    const WIDTH = 544;
+    const HEIGHT = 306;
+    const HEADER_BYTES = 12;
+
+    // ====== UI ======
+    const fileInput = document.getElementById('fileInput');
+    const modeEl = document.getElementById('mode');
+    const autoRangeEl = document.getElementById('autoRange');
+    const pLowEl = document.getElementById('pLow');
+    const pHighEl = document.getElementById('pHigh');
+    const ignoreZeroEl = document.getElementById('ignoreZero');
+    const invertEl = document.getElementById('invert');
+    const ditherMethodEl = document.getElementById('ditherMethod');
+    const ditherStrengthEl = document.getElementById('ditherStrength');
+    const fmtEl = document.getElementById('fmt');
+    const jpgQEl = document.getElementById('jpgQ');
+    const autoRenderBtn = document.getElementById('autoRenderBtn');
+    const renderAllBtn = document.getElementById('renderAllBtn');
+    const zipBtn = document.getElementById('zipBtn');
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('list');
+
+    /** @type {{
+     *  file: File, name: string,
+     *  depths: Uint16Array, min: number, max: number,
+     *  hist: Uint32Array, nzCount: number,
+     *  canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
+     *  zmin: number, zmax: number,
+     *  zminInput: HTMLInputElement, zmaxInput: HTMLInputElement,
+     *  dlBtn: HTMLButtonElement, rerenderBtn: HTMLButtonElement, autoBtn: HTMLButtonElement,
+     *  blobCache?: Blob
+     * }[]} */
+    let items = [];
+
+    // Clear cached exports when global settings change
+    for (const el of [modeEl, autoRangeEl, pLowEl, pHighEl, ignoreZeroEl, invertEl, ditherMethodEl, ditherStrengthEl, fmtEl, jpgQEl]) {
+      el.addEventListener('input', () => clearAllCaches());
+      el.addEventListener('change', () => clearAllCaches());
+    }
+    function clearAllCaches() {
+      for (const it of items) it.blobCache = undefined;
+    }
+
+    fileInput.addEventListener('change', async () => {
+      items = [];
+      listEl.innerHTML = "";
+      zipBtn.disabled = true;
+      autoRenderBtn.disabled = true;
+      renderAllBtn.disabled = true;
+
+      const files = [...fileInput.files || []];
+      if (!files.length) { setStatus("Select at least one .ZBMP file.", "warn"); return; }
+
+      setStatus("Loading files…", "warn");
+
+      try {
+        for (const f of files) {
+          const ab = await f.arrayBuffer();
+          const parsed = parseZBMP(ab);
+          if (!parsed.ok) { addErrorCard(f.name, parsed.error); continue; }
+
+          const { depths, min, max, hist, nzCount } = parsed;
+
+          const canvas = document.createElement('canvas');
+          canvas.width = WIDTH; canvas.height = HEIGHT;
+          const ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+          const wrapper = document.createElement('div');
+          wrapper.className = "card item";
+
+          const left = document.createElement('div');
+          left.appendChild(canvas);
+
+          const right = document.createElement('div');
+
+          const meta = document.createElement('div');
+          meta.className = "meta";
+          meta.innerHTML = `
+            <div><b>${escapeHtml(f.name)}</b></div>
+            <div>${WIDTH}×${HEIGHT} <span class="pill">Uint16 LE</span></div>
+            <div>Detected min: <b>${min}</b> · detected max: <b>${max}</b></div>
+          `;
+
+          const actions = document.createElement('div');
+          actions.className = "actions";
+
+          const zminInput = document.createElement('input');
+          zminInput.type = "number";
+          zminInput.className = "w120";
+          zminInput.min = "0"; zminInput.max = "65535"; zminInput.step = "1";
+          zminInput.title = "Per-image zMin";
+
+          const zmaxInput = document.createElement('input');
+          zmaxInput.type = "number";
+          zmaxInput.className = "w120";
+          zmaxInput.min = "0"; zmaxInput.max = "65535"; zmaxInput.step = "1";
+          zmaxInput.title = "Per-image zMax";
+
+          const autoBtn = document.createElement('button');
+          autoBtn.textContent = "Auto-range (this)";
+          autoBtn.disabled = true;
+
+          const rerenderBtn = document.createElement('button');
+          rerenderBtn.textContent = "Re-render (this)";
+          rerenderBtn.disabled = true;
+
+          const dlBtn = document.createElement('button');
+          dlBtn.textContent = "Download (this)";
+          dlBtn.disabled = true;
+
+          const rangeBlock = document.createElement('div');
+          rangeBlock.className = "inline";
+          const rangeLabel = document.createElement('div');
+          rangeLabel.className = "small";
+          rangeLabel.textContent = "Range:";
+          rangeBlock.appendChild(rangeLabel);
+          rangeBlock.appendChild(zminInput);
+          rangeBlock.appendChild(zmaxInput);
+
+          actions.appendChild(rangeBlock);
+          actions.appendChild(autoBtn);
+          actions.appendChild(rerenderBtn);
+          actions.appendChild(dlBtn);
+
+          right.appendChild(meta);
+          right.appendChild(actions);
+
+          wrapper.appendChild(left);
+          wrapper.appendChild(right);
+          listEl.appendChild(wrapper);
+
+          const item = {
+            file: f, name: f.name, depths, min, max, hist, nzCount,
+            canvas, ctx,
+            zmin: min, zmax: max,
+            zminInput, zmaxInput,
+            dlBtn, rerenderBtn, autoBtn
+          };
+          items.push(item);
+
+          // Editing zmin/zmax invalidates cache for that item
+          zminInput.addEventListener('input', () => item.blobCache = undefined);
+          zmaxInput.addEventListener('input', () => item.blobCache = undefined);
+
+          autoBtn.addEventListener('click', async () => {
+            applyAutoRangeToItem(item);
+            await renderOne(item);
+            dlBtn.disabled = false;
+          });
+
+          rerenderBtn.addEventListener('click', async () => {
+            const zmin = toInt(item.zminInput.value, item.zmin);
+            const zmax = toInt(item.zmaxInput.value, item.zmax);
+            if (zmax <= zmin) { alert("zMax must be greater than zMin."); return; }
+            item.zmin = zmin;
+            item.zmax = zmax;
+            await renderOne(item);
+            dlBtn.disabled = false;
+          });
+
+          dlBtn.addEventListener('click', async () => {
+            const blob = await renderToBlob(item);
+            downloadBlob(blob, makeOutName(item.name));
+          });
+        }
+
+        if (!items.length) { setStatus("No valid ZBMP files loaded.", "warn"); return; }
+
+        autoRenderBtn.disabled = false;
+        renderAllBtn.disabled = false;
+        zipBtn.disabled = false;
+
+        for (const it of items) {
+          it.autoBtn.disabled = false;
+          it.rerenderBtn.disabled = false;
+          // initialize range fields with detected min/max
+          it.zminInput.value = String(it.zmin);
+          it.zmaxInput.value = String(it.zmax);
+        }
+
+        setStatus(`Loaded ${items.length} file(s).`, "ok");
+      } catch (e) {
+        console.error(e);
+        setStatus("Error while loading/parsing. Check console.", "warn");
+      }
+    });
+
+    autoRenderBtn.addEventListener('click', async () => {
+      if (!items.length) return;
+      setStatus("Auto-ranging + rendering…", "warn");
+      try {
+        let globalMin = 65535, globalMax = 0;
+        if (autoRangeEl.value === "globalMinMax") {
+          for (const it of items) {
+            if (it.min < globalMin) globalMin = it.min;
+            if (it.max > globalMax) globalMax = it.max;
+          }
+        }
+
+        for (const it of items) {
+          applyAutoRangeToItem(it, globalMin, globalMax);
+        }
+
+        for (const it of items) {
+          await renderOne(it);
+          it.dlBtn.disabled = false;
+        }
+
+        setStatus("Done. You can edit zMin/zMax per image and re-render.", "ok");
+      } catch (e) {
+        console.error(e);
+        setStatus("Render error. Check console.", "warn");
+      }
+    });
+
+    renderAllBtn.addEventListener('click', async () => {
+      if (!items.length) return;
+      setStatus("Rendering all (using current per-image ranges)…", "warn");
+      try {
+        for (const it of items) {
+          // pull current inputs into item range
+          const zmin = toInt(it.zminInput.value, it.zmin);
+          const zmax = toInt(it.zmaxInput.value, it.zmax);
+          if (zmax <= zmin) continue; // skip invalid
+          it.zmin = zmin;
+          it.zmax = zmax;
+        }
+        for (const it of items) {
+          await renderOne(it);
+          it.dlBtn.disabled = false;
+        }
+        setStatus("Done.", "ok");
+      } catch (e) {
+        console.error(e);
+        setStatus("Render error. Check console.", "warn");
+      }
+    });
+
+    zipBtn.addEventListener('click', async () => {
+      if (!items.length) return;
+      setStatus("Building ZIP…", "warn");
+      try {
+        const zip = new JSZip();
+        for (const it of items) {
+          const blob = await renderToBlob(it);
+          zip.file(makeOutName(it.name), await blob.arrayBuffer());
+        }
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        downloadBlob(zipBlob, `zbmp_converted_${Date.now()}.zip`);
+        setStatus("ZIP generated.", "ok");
+      } catch (e) {
+        console.error(e);
+        setStatus("ZIP error. Check console.", "warn");
+      }
+    });
+
+    // ====== Parse ZBMP ======
+    function parseZBMP(arrayBuffer) {
+      const bytes = arrayBuffer.byteLength;
+      const needed = HEADER_BYTES + (WIDTH * HEIGHT * 2);
+      if (bytes < needed) return { ok: false, error: `File too small (${bytes} bytes). Expected ≥ ${needed}.` };
+
+      const dv = new DataView(arrayBuffer, HEADER_BYTES);
+      const count = WIDTH * HEIGHT;
+      const depths = new Uint16Array(count);
+
+      let min = 65535, max = 0;
+      const hist = new Uint32Array(65536);
+      let nzCount = 0;
+
+      for (let i = 0; i < count; i++) {
+        const v = dv.getUint16(i * 2, true);
+        depths[i] = v;
+        if (v < min) min = v;
+        if (v > max) max = v;
+        hist[v] += 1;
+        if (v !== 0) nzCount += 1;
+      }
+      return { ok: true, depths, min, max, hist, nzCount };
+    }
+
+    // ====== Auto-range (fills per-image editable range) ======
+    function applyAutoRangeToItem(it, globalMin, globalMax) {
+      const mode = autoRangeEl.value;
+      const ignoreZero = ignoreZeroEl.value === "1";
+
+      let zmin, zmax;
+
+      if (mode === "minmax") {
+        zmin = it.min; zmax = it.max;
+      } else if (mode === "globalMinMax") {
+        zmin = globalMin; zmax = globalMax;
+      } else {
+        let pLow = clamp(parseFloat(pLowEl.value || "1.0"), 0, 49.9);
+        let pHigh = clamp(parseFloat(pHighEl.value || "99.0"), 50.1, 100);
+        if (pHigh <= pLow) { pLow = 1.0; pHigh = 99.0; }
+
+        const total = ignoreZero ? it.nzCount : (WIDTH * HEIGHT);
+        if (total <= 0) {
+          zmin = it.min; zmax = it.max;
+        } else {
+          zmin = percentileFromHist(it.hist, pLow / 100, total, ignoreZero);
+          zmax = percentileFromHist(it.hist, pHigh / 100, total, ignoreZero);
+          if (zmax <= zmin) { zmin = it.min; zmax = it.max; }
+        }
+      }
+
+      it.zmin = zmin; it.zmax = zmax;
+      it.zminInput.value = String(zmin);
+      it.zmaxInput.value = String(zmax);
+      it.blobCache = undefined;
+    }
+
+    function percentileFromHist(hist, q, totalCount, ignoreZero) {
+      const target = Math.floor(q * (totalCount - 1));
+      let acc = 0;
+      const start = ignoreZero ? 1 : 0;
+      for (let v = start; v < hist.length; v++) {
+        const c = hist[v];
+        if (!c) continue;
+        const next = acc + c;
+        if (target < next) return v;
+        acc = next;
+      }
+      return 65535;
+    }
+
+    // ====== Rendering ======
+    async function renderOne(it) {
+      const zmin = it.zmin;
+      const zmax = it.zmax;
+
+      const invert = invertEl.value === "1";
+      const mode = modeEl.value;
+      const ignoreZero = ignoreZeroEl.value === "1";
+
+      const method = ditherMethodEl.value;
+      const strength = clamp(parseFloat(ditherStrengthEl.value || "1.0"), 0, 3); // in 8-bit LSB units
+
+      // Floyd–Steinberg only for grayscale; otherwise fall back to Bayer
+      const effectiveMethod = (method === "fs" && mode !== "gray") ? "bayer8" : method;
+
+      if (effectiveMethod === "fs" && mode === "gray") {
+        // grayscale error diffusion
+        renderGrayscaleFloydSteinberg(it, zmin, zmax, invert, ignoreZero, strength);
+      } else {
+        // fast per-pixel (noise / bayer / off)
+        renderFast(it, zmin, zmax, invert, ignoreZero, mode, effectiveMethod, strength);
+      }
+
+      it.blobCache = undefined;
+    }
+
+    function renderFast(it, zmin, zmax, invert, ignoreZero, mode, ditherMethod, strength) {
+      const img = it.ctx.createImageData(WIDTH, HEIGHT);
+      const data = img.data;
+      const depths = it.depths;
+      const denom = Math.max(1, (zmax - zmin));
+
+      for (let idx = 0; idx < depths.length; idx++) {
+        const v = depths[idx];
+
+        if (ignoreZero && v === 0) {
+          const o = idx * 4;
+          data[o+0]=0; data[o+1]=0; data[o+2]=0; data[o+3]=255;
+          continue;
+        }
+
+        let t = (v - zmin) / denom;
+        t = clamp01(t);
+        if (invert) t = 1 - t;
+
+        if (ditherMethod !== "off" && strength > 0) {
+          const x = idx % WIDTH;
+          const y = (idx / WIDTH) | 0;
+          t = clamp01(t + ditherOffset(ditherMethod, x, y) * (strength / 255));
+        }
+
+        const o = idx * 4;
+        if (mode === "gray") {
+          const g = (t * 255) | 0;
+          data[o+0]=g; data[o+1]=g; data[o+2]=g; data[o+3]=255;
+        } else {
+          const [r, g, b] = rampRGB8(t);
+          data[o+0]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
+        }
+      }
+
+      it.ctx.putImageData(img, 0, 0);
+    }
+
+    function renderGrayscaleFloydSteinberg(it, zmin, zmax, invert, ignoreZero, strength) {
+      // Convert to float grayscale [0..255], diffuse quantization error.
+      // strength scales how “strongly” diffusion acts (0..3 mapped to multiplier).
+      const strengthMul = clamp(strength / 1.0, 0, 3); // 1.0 ~ normal
+      const denom = Math.max(1, (zmax - zmin));
+      const depths = it.depths;
+
+      // working buffer per row + next row
+      const errRow = new Float32Array(WIDTH);
+      const errNext = new Float32Array(WIDTH);
+
+      const img = it.ctx.createImageData(WIDTH, HEIGHT);
+      const data = img.data;
+
+      for (let y = 0; y < HEIGHT; y++) {
+        errNext.fill(0);
+
+        for (let x = 0; x < WIDTH; x++) {
+          const idx = y * WIDTH + x;
+          const v = depths[idx];
+
+          let g8;
+          if (ignoreZero && v === 0) {
+            g8 = 0;
+          } else {
+            let t = (v - zmin) / denom;
+            t = clamp01(t);
+            if (invert) t = 1 - t;
+            g8 = t * 255;
+          }
+
+          // add propagated error
+          g8 += errRow[x];
+
+          // quantize to integer 0..255
+          const q = clamp(Math.round(g8), 0, 255);
+          const e = (g8 - q) * strengthMul;
+
+          // distribute error
+          //   x+1: 7/16
+          //   next row: x-1 3/16, x 5/16, x+1 1/16
+          if (x + 1 < WIDTH) errRow[x + 1] += e * (7 / 16);
+          if (y + 1 < HEIGHT) {
+            if (x > 0) errNext[x - 1] += e * (3 / 16);
+            errNext[x] += e * (5 / 16);
+            if (x + 1 < WIDTH) errNext[x + 1] += e * (1 / 16);
+          }
+
+          const o = idx * 4;
+          data[o+0]=q; data[o+1]=q; data[o+2]=q; data[o+3]=255;
+        }
+
+        // swap error rows
+        errRow.set(errNext);
+      }
+
+      it.ctx.putImageData(img, 0, 0);
+    }
+
+    function ditherOffset(method, x, y) {
+      // returns centered offset in [-0.5..+0.5]
+      if (method === "noise") {
+        return hash01(x, y) - 0.5;
+      }
+      if (method === "bayer8") {
+        const t = bayer8[(y & 7) * 8 + (x & 7)]; // 0..63
+        // map to [-0.5..+0.5]
+        return ((t + 0.5) / 64) - 0.5;
+      }
+      return 0;
+    }
+
+    // Bayer 8x8 threshold map (0..63)
+    const bayer8 = new Uint8Array([
+      0,48,12,60, 3,51,15,63,
+      32,16,44,28, 35,19,47,31,
+      8,56,4,52, 11,59,7,55,
+      40,24,36,20, 43,27,39,23,
+      2,50,14,62, 1,49,13,61,
+      34,18,46,30, 33,17,45,29,
+      10,58,6,54, 9,57,5,53,
+      42,26,38,22, 41,25,37,21
+    ]);
+
+    // ====== Export ======
+    async function renderToBlob(it) {
+      if (it.blobCache) return it.blobCache;
+
+      const fmt = fmtEl.value;
+
+      if (fmt === "png16") {
+        const blob = buildPNG16Blob(it);
+        it.blobCache = blob;
+        return blob;
+      }
+
+      const mime = (fmt === "jpg") ? "image/jpeg" : "image/png";
+      const quality = clamp01(parseFloat(jpgQEl.value || "0.92"));
+      const blob = await new Promise(resolve => it.canvas.toBlob(resolve, mime, (fmt === "jpg") ? quality : undefined));
+      it.blobCache = blob;
+      return blob;
+    }
+
+    function buildPNG16Blob(it) {
+      const mode = modeEl.value;
+      const invert = invertEl.value === "1";
+      const ignoreZero = ignoreZeroEl.value === "1";
+
+      const zmin = it.zmin;
+      const zmax = it.zmax;
+      const denom = Math.max(1, (zmax - zmin));
+
+      const channels = (mode === "gray") ? 1 : 3;
+      const out = new Uint16Array(WIDTH * HEIGHT * channels);
+
+      for (let idx = 0; idx < it.depths.length; idx++) {
+        const v = it.depths[idx];
+
+        if (ignoreZero && v === 0) {
+          const base = idx * channels;
+          for (let c = 0; c < channels; c++) out[base + c] = 0;
+          continue;
+        }
+
+        let t = (v - zmin) / denom;
+        t = clamp01(t);
+        if (invert) t = 1 - t;
+
+        if (channels === 1) {
+          out[idx] = (t * 65535) | 0;
+        } else {
+          const [r, g, b] = rampRGB16(t);
+          const base = idx * 3;
+          out[base + 0] = r;
+          out[base + 1] = g;
+          out[base + 2] = b;
+        }
+      }
+
+      const pngBytes = encodePNG16(WIDTH, HEIGHT, channels, out);
+      return new Blob([pngBytes], { type: "image/png" });
+    }
+
+    function makeOutName(inName) {
+      const fmt = fmtEl.value;
+      const base = inName.replace(/\.[^.]+$/, "");
+      if (fmt === "jpg") return `${base}_zpass.jpg`;
+      if (fmt === "png16") return `${base}_zpass_16bit.png`;
+      return `${base}_zpass.png`;
+    }
+
+    // ====== 16-bit PNG encoder (pako deflate) ======
+    function encodePNG16(width, height, channels, data16) {
+      const colorType = (channels === 1) ? 0 : 2; // 0=grayscale, 2=RGB
+      const bitDepth = 16;
+
+      const bytesPerPixel = channels * 2;
+      const stride = width * bytesPerPixel;
+      const raw = new Uint8Array((stride + 1) * height);
+
+      let o = 0;
+      let di = 0;
+      for (let y = 0; y < height; y++) {
+        raw[o++] = 0; // filter 0
+        for (let x = 0; x < width * channels; x++) {
+          const v = data16[di++] & 0xFFFF;
+          raw[o++] = (v >> 8) & 0xFF;
+          raw[o++] = v & 0xFF;
+        }
+      }
+
+      const compressed = pako.deflate(raw);
+
+      const signature = new Uint8Array([137,80,78,71,13,10,26,10]);
+
+      const ihdr = new Uint8Array(13);
+      writeU32BE(ihdr, 0, width);
+      writeU32BE(ihdr, 4, height);
+      ihdr[8] = bitDepth;
+      ihdr[9] = colorType;
+      ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+
+      const chunks = [];
+      chunks.push(signature);
+      chunks.push(makeChunk("IHDR", ihdr));
+      chunks.push(makeChunk("IDAT", compressed));
+      chunks.push(makeChunk("IEND", new Uint8Array(0)));
+      return concatBytes(chunks);
+    }
+
+    function makeChunk(typeStr, data) {
+      const type = new Uint8Array(4);
+      for (let i = 0; i < 4; i++) type[i] = typeStr.charCodeAt(i) & 0xFF;
+
+      const len = data.length;
+      const out = new Uint8Array(4 + 4 + len + 4);
+      writeU32BE(out, 0, len);
+      out.set(type, 4);
+      out.set(data, 8);
+
+      const crc = crc32(out.subarray(4, 8 + len));
+      writeU32BE(out, 8 + len, crc >>> 0);
+      return out;
+    }
+
+    function writeU32BE(buf, off, v) {
+      buf[off+0] = (v >>> 24) & 0xFF;
+      buf[off+1] = (v >>> 16) & 0xFF;
+      buf[off+2] = (v >>> 8) & 0xFF;
+      buf[off+3] = v & 0xFF;
+    }
+
+    function concatBytes(arrays) {
+      let total = 0;
+      for (const a of arrays) total += a.length;
+      const out = new Uint8Array(total);
+      let o = 0;
+      for (const a of arrays) { out.set(a, o); o += a.length; }
+      return out;
+    }
+
+    const CRC_TABLE = (() => {
+      const table = new Uint32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[n] = c >>> 0;
+      }
+      return table;
+    })();
+
+    function crc32(bytes) {
+      let c = 0xFFFFFFFF;
+      for (let i = 0; i < bytes.length; i++) {
+        c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+      }
+      return (c ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    // ====== Color ramps ======
+    function rampRGB8(t) {
+      if (t <= 0.5) {
+        const a = t / 0.5;
+        const r = lerp(255, 0, a) | 0;
+        const g = lerp(0, 255, a) | 0;
+        return [r, g, 0];
+      } else {
+        const a = (t - 0.5) / 0.5;
+        const g = lerp(255, 0, a) | 0;
+        const b = lerp(0, 255, a) | 0;
+        return [0, g, b];
+      }
+    }
+
+    function rampRGB16(t) {
+      if (t <= 0.5) {
+        const a = t / 0.5;
+        const r = lerp(65535, 0, a) | 0;
+        const g = lerp(0, 65535, a) | 0;
+        return [r, g, 0];
+      } else {
+        const a = (t - 0.5) / 0.5;
+        const g = lerp(65535, 0, a) | 0;
+        const b = lerp(0, 65535, a) | 0;
+        return [0, g, b];
+      }
+    }
+
+    // deterministic noise 0..1
+    function hash01(x, y) {
+      let n = x * 374761393 + y * 668265263;
+      n = (n ^ (n >> 13)) >>> 0;
+      n = (n * 1274126177) >>> 0;
+      return (n & 0xFFFFFFFF) / 4294967295;
+    }
+
+    // ====== Helpers ======
+    function toInt(s, fallback) {
+      const v = parseInt(s, 10);
+      return Number.isFinite(v) ? v : fallback;
+    }
+    function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a);
+      a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg;
+      statusEl.className = "small " + (kind === "ok" ? "ok" : "warn");
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function addErrorCard(name, err) {
+      const wrapper = document.createElement('div');
+      wrapper.className = "card";
+      wrapper.innerHTML = `<div class="meta"><b>${escapeHtml(name)}</b><div class="warn">❗ ${escapeHtml(err)}</div></div>`;
+      listEl.appendChild(wrapper);
+    }
+  </script>
+</body>
+</html>
