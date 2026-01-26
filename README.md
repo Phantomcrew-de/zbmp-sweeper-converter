@@ -7,14 +7,13 @@ This generates zbuffer-sweeping preview from ZBMP/MBMP backgrounds from Microsof
 [▶️ Try Sweeper](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-sweeper.html)
 
 
-
 | RGB-Ramp | Monochrome |
 |--------|--------|
 | ![/img/prev_image_01.png](/img/prev_image_01.png) | ![/img/prev_image_02.png](/img/prev_image_02.png) |
+| ![/img/prev_image_03.png](/img/prev_image_03.png) | ![example zbmp sweep gif](http://i.imgur.com/EQBpRHX.gif) |
 
 
 
-![example zbmp sweep gif](http://i.imgur.com/EQBpRHX.gif)
 
 Requirements
 ============
