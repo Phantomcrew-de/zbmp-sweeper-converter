@@ -5,6 +5,7 @@ This generates zbuffer-sweeping preview from ZBMP/MBMP backgrounds from Microsof
 
 [▶️ Try Converter](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-converter.html) | 
 [▶️ Try Sweeper](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-sweeper.html)
+[▶️ Try Z-Pass to ZBMP](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zpass_to_zbmp-converter.html)
 
 
 | RGB-Ramp | Monochrome |
