@@ -802,12 +802,20 @@
 
     setBtn("Rendering… 0%", true);
 
+    // Create a same-origin (blob:) worker bootstrap so GIF rendering works even when this HTML is opened via file://
+    // Many browsers block loading a worker directly from https when the page is file://.
+    const workerBootstrap = `importScripts("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js");`;
+    const workerUrl = URL.createObjectURL(new Blob([workerBootstrap], { type: "application/javascript" }));
+
     const gif = new GIF({
-      // NOTE: Local files (file://) often block CDN workers. Using workers:0 avoids the 0% hang.
-      // If you host this over http(s) and have gif.worker.js locally, you can switch to workers:2 and set workerScript.
-      workers: 0,
-      // higher = faster/rougher; lower = nicer/slower.
-      quality: 20
+      workers: 2,
+      quality: 20,
+      workerScript: workerUrl
+    });
+
+    gif.on("finished", () => {
+      // cleanup bootstrap worker URL once encoding is done
+      try { URL.revokeObjectURL(workerUrl); } catch {}
     });
 
     gif.on("progress", p=>{
@@ -822,6 +830,12 @@
       a.click();
       a.remove();
       URL.revokeObjectURL(a.href);
+      setBtn("⬇ GIF", false);
+    });
+
+    gif.on("error", (e)=>{
+      console.error("GIF export error:", e);
+      alert("GIF export error (see console). Often this is a worker/CORS issue.");
       setBtn("⬇ GIF", false);
     });
 
