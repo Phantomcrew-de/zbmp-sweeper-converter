@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ZBMP Sweep (Browser)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; line-height: 1.3; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    label { display:block; margin: 8px 0 4px; font-weight: 600; }
+    input[type="number"], input[type="range"] { width: 220px; }
+    .muted { color:#666; font-size: 12px; }
+    canvas { border: 1px solid #ccc; border-radius: 8px; image-rendering: pixelated; }
+    button { padding: 8px 12px; border-radius: 10px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>ZBMP Sweep (live im Browser)</h1>
+  <div class="muted">
+    Erwartet: palettiertes BMP (MBMP) + ZBMP roh: 12 Byte Header, dann 306×544 uint16 little-endian.
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h3>Dateien</h3>
+      <label>BMP (MBMP chunk als .bmp)</label>
+      <input id="bmpFile" type="file" accept=".bmp" />
+
+      <label>ZBMP (dekomprimiert, roh)</label>
+      <input id="zbmpFile" type="file" />
+
+      <div class="muted" style="margin-top:10px">
+        Tipp: Wenn du nur die ZBMP-Datei auswählst, passiert nichts – beide Dateien nötig.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Parameter</h3>
+
+      <label>Steps (Frames)</label>
+      <input id="steps" type="number" min="2" max="2000" value="100" />
+
+      <label>Speed (Hundertstel Sekunden / Frame)</label>
+      <input id="speed" type="number" min="1" max="500" value="5" />
+
+      <label>Reverse</label>
+      <input id="reverse" type="checkbox" />
+
+      <label>Override zmin (optional)</label>
+      <input id="zmin" type="number" min="0" max="65536" placeholder="leer = auto" />
+
+      <label>Override zmax (optional)</label>
+      <input id="zmax" type="number" min="0" max="65536" placeholder="leer = auto" />
+
+      <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="build" disabled>Build / Berechnen</button>
+        <button id="play" disabled>Play</button>
+        <button id="stop" disabled>Stop</button>
+        <button id="saveFrame" disabled>Frame als PNG</button>
+      </div>
+
+      <div class="muted" style="margin-top:10px">
+        Hinweis: In Python wurden Palette-Farben 0=schwarz und 1=hellgrün „eingeschoben“. Das passiert hier genauso.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Vorschau</h3>
+      <canvas id="cv" width="544" height="306"></canvas>
+      <div class="muted" style="margin-top:8px">
+        Canvas ist 544×306 (wie im Script).
+      </div>
+    </div>
+
+    <div class="card" style="min-width:320px; flex:1">
+      <h3>Log</h3>
+      <div id="log" class="mono"></div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const W = 544, H = 306;
+  const bmpInput = document.getElementById('bmpFile');
+  const zbmpInput = document.getElementById('zbmpFile');
+  const stepsEl = document.getElementById('steps');
+  const speedEl = document.getElementById('speed');
+  const reverseEl = document.getElementById('reverse');
+  const zminEl = document.getElementById('zmin');
+  const zmaxEl = document.getElementById('zmax');
+  const buildBtn = document.getElementById('build');
+  const playBtn = document.getElementById('play');
+  const stopBtn = document.getElementById('stop');
+  const saveFrameBtn = document.getElementById('saveFrame');
+  const logEl = document.getElementById('log');
+
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+  function log(msg) {
+    logEl.textContent += msg + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // --- State ---
+  let bmp = null;       // {paletteRGBA: Uint8ClampedArray( (256*4) ), idx: Uint8Array(W*H)}
+  let zbuf = null;      // Uint16Array(W*H)
+  let autoZmin = null, autoZmax = null;
+  let thresholds = [];  // number[]
+  let frameIndex = 0;
+  let timer = null;
+
+  // For speed: reuse buffers
+  const outIdx = new Uint8Array(W * H);         // final palette indices per pixel
+  const outRGBA = new Uint8ClampedArray(W * H * 4);
+  const imgData = new ImageData(outRGBA, W, H);
+
+  function enableIfReady() {
+    const ready = !!bmpInput.files?.[0] && !!zbmpInput.files?.[0];
+    buildBtn.disabled = !ready;
+  }
+
+  bmpInput.addEventListener('change', enableIfReady);
+  zbmpInput.addEventListener('change', enableIfReady);
+
+  function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onerror = () => reject(r.error);
+      r.onload = () => resolve(r.result);
+      r.readAsArrayBuffer(file);
+    });
+  }
+
+  // --- BMP parsing (supports paletted 8bpp BI_RGB, bottom-up common case) ---
+  function parseBMP(buf) {
+    const dv = new DataView(buf);
+    // Signature "BM"
+    if (dv.getUint16(0, true) !== 0x4D42) throw new Error("Keine BMP-Datei (BM fehlt).");
+
+    const pixelOffset = dv.getUint32(10, true);
+    const dibSize = dv.getUint32(14, true);
+    if (dibSize < 40) throw new Error("Unbekanntes BMP-DIB-Format (zu klein).");
+
+    const width  = dv.getInt32(18, true);
+    const height = dv.getInt32(22, true);
+    const planes = dv.getUint16(26, true);
+    const bpp    = dv.getUint16(28, true);
+    const compression = dv.getUint32(30, true);
+
+    if (planes !== 1) throw new Error("BMP: planes != 1");
+    if (bpp !== 8) throw new Error("BMP muss 8bpp palettiert sein (hier: " + bpp + "bpp).");
+    if (compression !== 0) throw new Error("BMP muss unkomprimiert (BI_RGB) sein.");
+
+    const absH = Math.abs(height);
+    if (width !== W || absH !== H) {
+      throw new Error(`BMP Größe passt nicht: erwartet ${W}×${H}, bekommen ${width}×${absH}.`);
+    }
+
+    // Palette starts at 14 + dibSize, entries are BGRA (4 bytes)
+    const paletteOffset = 14 + dibSize;
+    const paletteBytes = (pixelOffset - paletteOffset);
+    const colors = Math.min(256, Math.floor(paletteBytes / 4));
+    if (colors <= 0) throw new Error("Keine Palette gefunden.");
+
+    const paletteRGBA = new Uint8ClampedArray(256 * 4);
+    // Default all opaque
+    for (let i = 0; i < 256; i++) paletteRGBA[i*4+3] = 255;
+
+    for (let i = 0; i < colors; i++) {
+      const b = dv.getUint8(paletteOffset + i*4 + 0);
+      const g = dv.getUint8(paletteOffset + i*4 + 1);
+      const r = dv.getUint8(paletteOffset + i*4 + 2);
+      // const a = dv.getUint8(paletteOffset + i*4 + 3); // often unused
+      paletteRGBA[i*4+0] = r;
+      paletteRGBA[i*4+1] = g;
+      paletteRGBA[i*4+2] = b;
+      paletteRGBA[i*4+3] = 255;
+    }
+
+    // Insert black + bright green into palette as indices 0 and 1,
+    // shifting original palette by +2 (like the python script).
+    const shifted = new Uint8ClampedArray(256 * 4);
+    // index 0: black
+    shifted[0] = 0; shifted[1] = 0; shifted[2] = 0; shifted[3] = 255;
+    // index 1: bright green
+    shifted[4] = 0; shifted[5] = 255; shifted[6] = 0; shifted[7] = 255;
+    // rest: original palette starting at index 2
+    for (let i = 0; i < 254; i++) {
+      shifted[(i+2)*4+0] = paletteRGBA[i*4+0];
+      shifted[(i+2)*4+1] = paletteRGBA[i*4+1];
+      shifted[(i+2)*4+2] = paletteRGBA[i*4+2];
+      shifted[(i+2)*4+3] = 255;
+    }
+
+    // Pixel array: each row padded to 4 bytes
+    const rowSize = ((width + 3) & ~3); // for 8bpp: bytes per row rounded up to multiple of 4
+    const idx = new Uint8Array(W * H);
+
+    const bottomUp = (height > 0);
+    for (let y = 0; y < H; y++) {
+      const srcY = bottomUp ? (H - 1 - y) : y;
+      const rowStart = pixelOffset + srcY * rowSize;
+      for (let x = 0; x < W; x++) {
+        const originalIndex = dv.getUint8(rowStart + x);
+        // shift indices by +2 to account for inserted colors.
+        const shiftedIndex = (originalIndex + 2) & 0xFF;
+        idx[y*W + x] = shiftedIndex;
+      }
+    }
+
+    return { paletteRGBA: shifted, idx };
+  }
+
+  // --- ZBMP parsing ---
+  function parseZBMP(buf) {
+    if (buf.byteLength < 12 + W*H*2) {
+      throw new Error("ZBMP ist zu klein. Erwartet mind. 12 + 306*544*2 bytes.");
+    }
+    const dv = new DataView(buf);
+    // skip 12 bytes header
+    const start = 12;
+    const z = new Uint16Array(W * H);
+    let zmin = 65535, zmax = 0;
+
+    let off = start;
+    for (let i = 0; i < W*H; i++, off += 2) {
+      const v = dv.getUint16(off, true);
+      z[i] = v;
+      if (v < zmin) zmin = v;
+      if (v > zmax) zmax = v;
+    }
+    return { z, zmin, zmax };
+  }
+
+  function buildThresholds(zmin, zmax, steps, reverse) {
+    const t = [];
+    // emulate python: zstep = (zmax - zmin) / steps, thresholds range(zmin, zmax, zstep)
+    // We do it with integer-ish progression but keep it numeric.
+    const zstep = (zmax - zmin) / steps;
+    for (let i = 0; i < steps; i++) {
+      const thr = zmin + i * zstep;
+      t.push(thr);
+    }
+    if (reverse) t.reverse();
+    // plus the final None frame in python -> we render last frame by forcing threshold to -1 or 65536
+    t.push(null);
+    return t;
+  }
+
+  function renderFrame(threshold, lastThreshold, reverse) {
+    // Start with template indices
+    outIdx.set(bmp.idx);
+
+    // Apply zbuffer sweep:
+    // python loops per pixel. We do flat index for speed.
+    // reverse:
+    //  if value < threshold -> 0 (black)
+    //  elif value < last_threshold -> 1 (green)
+    // else:
+    //  if value > threshold -> 0
+    //  elif value > last_threshold -> 1
+    const Z = zbuf;
+    const N = W * H;
+
+    for (let i = 0; i < N; i++) {
+      const v = Z[i];
+
+      if (reverse) {
+        if (v < threshold) outIdx[i] = 0;
+        else if (v < lastThreshold) outIdx[i] = 1;
+      } else {
+        if (v > threshold) outIdx[i] = 0;
+        else if (v > lastThreshold) outIdx[i] = 1;
+      }
+    }
+
+    // Convert palette indices -> RGBA
+    const pal = bmp.paletteRGBA;
+    let p = 0;
+    for (let i = 0; i < N; i++) {
+      const idx = outIdx[i] * 4;
+      outRGBA[p++] = pal[idx+0];
+      outRGBA[p++] = pal[idx+1];
+      outRGBA[p++] = pal[idx+2];
+      outRGBA[p++] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  function stop() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    playBtn.disabled = !thresholds.length;
+    stopBtn.disabled = true;
+  }
+
+  function play() {
+    if (!thresholds.length) return;
+    stop();
+    const speedHsecs = parseInt(speedEl.value, 10) || 5;
+    const ms = Math.max(1, speedHsecs * 10);
+
+    playBtn.disabled = true;
+    stopBtn.disabled = false;
+
+    timer = setInterval(() => {
+      stepOnce();
+    }, ms);
+  }
+
+  function stepOnce() {
+    const reverse = reverseEl.checked;
+    let thr = thresholds[frameIndex];
+
+    let lastThr;
+    if (frameIndex === 0) {
+      // python: last_threshold = 0 initially; but it resets in last frame logic.
+      // We'll mimic: lastThr is previous threshold (or 0 for first)
+      lastThr = 0;
+    } else {
+      lastThr = thresholds[frameIndex - 1];
+      if (lastThr === null) lastThr = reverse ? -1 : 65536;
+    }
+
+    if (thr === null) {
+      thr = reverse ? -1 : 65536;
+    }
+
+    renderFrame(thr, lastThr, reverse);
+
+    frameIndex++;
+    if (frameIndex >= thresholds.length) frameIndex = 0;
+  }
+
+  buildBtn.addEventListener('click', async () => {
+    try {
+      stop();
+      frameIndex = 0;
+      thresholds = [];
+      logEl.textContent = "";
+
+      log("Lese BMP...");
+      const bmpBuf = await readFileAsArrayBuffer(bmpInput.files[0]);
+      bmp = parseBMP(bmpBuf);
+      log("BMP OK: 544×306, 8bpp, Palette geladen und um 2 Farben erweitert.");
+
+      log("Lese ZBMP...");
+      const zbBuf = await readFileAsArrayBuffer(zbmpInput.files[0]);
+      const parsed = parseZBMP(zbBuf);
+      zbuf = parsed.z;
+      autoZmin = parsed.zmin;
+      autoZmax = parsed.zmax;
+
+      const zminOverride = zminEl.value.trim() === "" ? null : Number(zminEl.value);
+      const zmaxOverride = zmaxEl.value.trim() === "" ? null : Number(zmaxEl.value);
+
+      let zmin = (zminOverride != null) ? zminOverride : autoZmin;
+      let zmax = (zmaxOverride != null) ? zmaxOverride : autoZmax;
+
+      log(`Automatic zmin = ${autoZmin}${zminOverride != null ? " (Overridden to " + zmin + ")" : ""}`);
+      log(`Automatic zmax = ${autoZmax}${zmaxOverride != null ? " (Overridden to " + zmax + ")" : ""}`);
+
+      const steps = Math.max(2, parseInt(stepsEl.value, 10) || 100);
+      const reverse = reverseEl.checked;
+
+      thresholds = buildThresholds(zmin, zmax, steps, reverse);
+      log(`Frames: ${thresholds.length} (inkl. End-Frame) | steps=${steps} | reverse=${reverse}`);
+
+      // Render first frame
+      stepOnce();
+
+      playBtn.disabled = false;
+      stopBtn.disabled = true;
+      saveFrameBtn.disabled = false;
+      log("Bereit. Play starten oder Frame speichern.");
+    } catch (e) {
+      console.error(e);
+      log("FEHLER: " + (e?.message || e));
+      playBtn.disabled = true;
+      stopBtn.disabled = true;
+      saveFrameBtn.disabled = true;
+    }
+  });
+
+  playBtn.addEventListener('click', play);
+  stopBtn.addEventListener('click', stop);
+
+  saveFrameBtn.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.download = `frame-${String(frameIndex).padStart(3,'0')}.png`;
+    a.href = cv.toDataURL('image/png');
+    a.click();
+  });
+
+})();
+</script>
+</body>
+</html>
