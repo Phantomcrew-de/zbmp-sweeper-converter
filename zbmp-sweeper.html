@@ -90,7 +90,7 @@
           <option value="none">off</option>
           <option value="edge" selected>highlight new pixels</option>
         </select>
-        <label style="margin:0;">HL color</label>
+        <label style="margin:0;">Color</label>
         <select id="highlightColor">
           <option value="green" selected>light green</option>
           <option value="white">white</option>
@@ -98,13 +98,17 @@
           <option value="blue">blue</option>
         </select>
 
-        <label style="margin:0;">Reverse</label>
         <select id="reverseMode">
           <option value="0" selected>normal</option>
           <option value="1">reverse</option>
         </select>
 
-        <label style="margin:0;">Image source</label>
+        <select id="playbackMode">
+          <option value="once" selected>once</option>
+          <option value="loop">loop</option>
+          <option value="pingpong">ping-pong</option>
+        </select>
+
         <select id="imageSource" disabled>
           <option value="auto" selected>auto (BMP if available)</option>
           <option value="bmp">BMP only</option>
@@ -158,6 +162,7 @@
   const highlightMode = $("highlightMode");
   const highlightColor = $("highlightColor");
   const reverseMode = $("reverseMode");
+  const playbackModeEl = $("playbackMode");
 
   const wInput = $("wInput");
   const hInput = $("hInput");
@@ -177,7 +182,10 @@
   let programmaticUpdate = false; // prevents scrub handler from resetting highlight during playback/export
 
   // playback state
-  let playIndex = 0;
+  let playIndex = 0;          // step index within sweep (0..steps)
+  let playDir = 1;            // +1 or -1 for ping-pong
+  let playHold = 0;           // counts remaining hold frames at slider=103
+  let lastTickWasHold = false;
 
   function resetAll() {
     filesByBase.clear();
@@ -467,27 +475,118 @@
     stopPlayback();
 
     const steps = Math.max(2, parseInt(stepsEl.value, 10) || 100);
-    playIndex = 0;
-    lastThr = null;
-
     const tickMs = Math.max(5, parseInt(speedMs.value, 10) || 30);
+    const mode = (playbackModeEl && playbackModeEl.value) ? playbackModeEl.value : "once";
+    const rev = reverseMode.value === "1";
 
-    timer = setInterval(() => {
-      // Sweep 0..100 for "steps" frames, then 3 extra frames in final-hold (slider=103 => BMP-only)
+    // Reset
+    lastThr = null;
+    playIndex = rev ? steps : 0; // for reverse we sweep down by default
+    playDir = rev ? -1 : 1;
+    playHold = rev ? 3 : 0;      // IMPORTANT: in reverse, prepend 3 BMP frames to avoid jump
+    lastTickWasHold = false;
+
+    // Helper: compute slider value for a given sweep index (0..steps)
+    const svAt = (idx) => {
+      // idx is in 0..steps. stepIndexToSliderValue already respects Step mode.
+      return stepIndexToSliderValue(idx);
+    };
+
+    const tick = () => {
+      const stepsNow = Math.max(2, parseInt(stepsEl.value, 10) || 100); // allow live changes
+      const modeNow = (playbackModeEl && playbackModeEl.value) ? playbackModeEl.value : "once";
+      const revNow = reverseMode.value === "1";
+
+      // If reverse toggled mid-play, restart cleanly
+      if (revNow !== rev) { startPlayback(); return; }
+
       let sv;
-      if (playIndex <= steps) {
-        sv = stepIndexToSliderValue(playIndex);
-      } else {
+
+      // Hold frames at full BMP (slider=103)
+      if (playHold > 0) {
         sv = 103;
+        playHold--;
+        lastTickWasHold = true;
+      } else {
+        // Sweep frame
+        sv = svAt(playIndex);
+        lastTickWasHold = false;
+
+        // Advance indices based on playback mode
+        if (modeNow === "pingpong") {
+          // Bounce between ends. Whenever we hit the "full" end, insert hold frames at 103.
+          const next = playIndex + playDir;
+          if (next > stepsNow) {
+            playDir = -1;
+            playIndex = stepsNow - 1;
+            playHold = 3; // hold at full BMP end
+          } else if (next < 0) {
+            playDir = 1;
+            playIndex = 1;
+          } else {
+            playIndex = next;
+          }
+        } else {
+          // once / loop: move in the current direction
+          playIndex += playDir;
+
+          // End conditions
+          const doneForward = (!revNow && playIndex > stepsNow);
+          const doneReverse = (revNow && playIndex < 0);
+
+          if (doneForward) {
+            // Append 3 BMP frames at the end for normal direction
+            playHold = 3;
+            playIndex = stepsNow; // clamp
+          } else if (doneReverse) {
+            // Reverse direction ends right after reaching index 0
+            playIndex = 0;
+          }
+
+          // If we just finished hold frames, decide whether to loop or stop
+          if (modeNow !== "pingpong") {
+            if (!revNow) {
+              // normal direction ends after hold frames
+              if (doneForward) {
+                // We'll stop/loop after hold is finished (handled below)
+              }
+            } else {
+              // reverse direction ends immediately after sweeping down to 0 (no trailing hold)
+              if (doneReverse) {
+                if (modeNow === "loop") {
+                  playIndex = stepsNow;
+                  playDir = -1;
+                  playHold = 3; // start hold again for seamless reverse loop
+                } else {
+                  stopPlayback();
+                }
+              }
+            }
+          }
+        }
       }
+
+      // Draw (update slider UI too)
       zSlider.value = String(sv);
       drawFrameBySlider(sv);
 
-      playIndex++;
-      if (playIndex > steps + 3) {
-        stopPlayback();
+      // Post-hold handling for normal once/loop
+      const modeAfter = (playbackModeEl && playbackModeEl.value) ? playbackModeEl.value : "once";
+      if (modeAfter !== "pingpong") {
+        if (!rev && playHold === 0 && lastTickWasHold) {
+          // we just finished the end hold in normal direction
+          if (modeAfter === "loop") {
+            playIndex = 0;
+            playDir = 1;
+            lastThr = null;
+          } else {
+            stopPlayback();
+          }
+        }
       }
-    }, tickMs);
+    };
+
+    timer = setInterval(tick, tickMs);
   }
 
   // --- Pair loading ---
@@ -783,6 +882,11 @@
     drawFrameBySlider(parseFloat(zSlider.value));
   });
 
+  playbackModeEl.addEventListener("change", () => {
+    if (!active) return;
+    stopPlayback();
+  });
+
   reparseBtn.addEventListener("click", () => {
     if (!activeBase) return;
     loadPair(activeBase);
@@ -886,22 +990,49 @@
     // Keep highlight band across frames during export (don't treat these as manual scrubs)
     if (window.__zbmp) { window.__zbmp.resetHighlight(); window.__zbmp.setProgrammaticUpdate(true); }
 
-    for(let i=0;i<=steps;i++){
-      const v = (i/steps)*100; // sweep zone 0..100
-      if(slider){
+    const reverse = (document.getElementById("reverseMode")?.value === "1");
+    const pbMode = (document.getElementById("playbackMode")?.value || "once");
+
+    // gif.js looping: 0 = infinite, -1 = no repeat
+    gif.options.repeat = (pbMode === "once") ? -1 : 0;
+
+    // Build frames as fast as possible (no real-time waiting).
+    // We drive the same slider+draw code so the GIF reflects Reverse + Playback mode.
+    const addFrameAt = (v) => {
+      if (slider) {
         slider.value = String(v);
         slider.dispatchEvent(new Event("input"));
       }
-      gif.addFrame(canvas, {copy:true, delay:speed});
-    }
+      gif.addFrame(canvas, { copy: true, delay: speed });
+    };
 
-    // Hold final BMP-only image for last 3 frames (slider > 100 triggers BMP mode)
-    if(slider){
-      slider.value = "103";
-      slider.dispatchEvent(new Event("input"));
-    }
-    for(let k=0;k<3;k++){
-      gif.addFrame(canvas, {copy:true, delay:speed});
+    // Helper: sweep index -> slider value (uses the existing stepIndexToSliderValue logic through the UI)
+    // We can't call that function directly here, so we approximate by writing to the zSlider in 0..100
+    // domain and letting the main script map to thresholds (matches on-screen behavior).
+    const sweepVal = (i) => (i / steps) * 100;
+
+    if (pbMode === "pingpong") {
+      // Ping-pong between ends. Always hold 3 frames at the "full BMP" end (slider=103).
+      if (reverse) {
+        // prepend hold for reverse to avoid jump
+        for (let k = 0; k < 3; k++) addFrameAt(103);
+        for (let i = steps; i >= 0; i--) addFrameAt(sweepVal(i));
+        for (let i = 1; i <= steps; i++) addFrameAt(sweepVal(i));
+        for (let k = 0; k < 3; k++) addFrameAt(103);
+      } else {
+        for (let i = 0; i <= steps; i++) addFrameAt(sweepVal(i));
+        for (let k = 0; k < 3; k++) addFrameAt(103);
+        for (let i = steps - 1; i >= 0; i--) addFrameAt(sweepVal(i));
+      }
+    } else {
+      // once / loop: single sweep in the chosen direction.
+      if (reverse) {
+        for (let k = 0; k < 3; k++) addFrameAt(103); // moved to front to avoid jump
+        for (let i = steps; i >= 0; i--) addFrameAt(sweepVal(i));
+      } else {
+        for (let i = 0; i <= steps; i++) addFrameAt(sweepVal(i));
+        for (let k = 0; k < 3; k++) addFrameAt(103);
+      }
     }
 
     // restore slider
