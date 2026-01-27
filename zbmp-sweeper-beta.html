@@ -90,6 +90,13 @@
           <option value="none">off</option>
           <option value="edge" selected>highlight new pixels</option>
         </select>
+        <label style="margin:0;">HL color</label>
+        <select id="highlightColor">
+          <option value="green" selected>light green</option>
+          <option value="white">white</option>
+          <option value="pink">pink</option>
+          <option value="blue">blue</option>
+        </select>
 
         <label style="margin:0;">Reverse</label>
         <select id="reverseMode">
@@ -149,6 +156,7 @@
   const stepsEl = $("steps");
   const stepModeEl = $("stepMode");
   const highlightMode = $("highlightMode");
+  const highlightColor = $("highlightColor");
   const reverseMode = $("reverseMode");
 
   const wInput = $("wInput");
@@ -166,6 +174,7 @@
 
   let timer = null;
   let lastThr = null;
+  let programmaticUpdate = false; // prevents scrub handler from resetting highlight during playback/export
 
   // playback state
   let playIndex = 0;
@@ -433,8 +442,17 @@
         dst[di+3] = 255;
 
         if (isNew) {
-          dst[di+0] = Math.min(255, dst[di+0] + 80);
-          dst[di+2] = Math.min(255, dst[di+2] + 120);
+          // Highlight new pixels with a selectable color
+          const mode = (highlightColor && highlightColor.value) ? highlightColor.value : "green";
+          let hr=180, hg=255, hb=180; // light green default
+          if (mode === "white") { hr=255; hg=255; hb=255; }
+          else if (mode === "pink") { hr=255; hg=180; hb=220; }
+          else if (mode === "blue") { hr=180; hg=200; hb=255; }
+          // Blend highlight color onto the pixel so hue stays visible even on bright pixels
+          const a = 0.75; // highlight strength
+          dst[di+0] = Math.min(255, Math.round(dst[di+0] * (1 - a) + hr * a));
+          dst[di+1] = Math.min(255, Math.round(dst[di+1] * (1 - a) + hg * a));
+          dst[di+2] = Math.min(255, Math.round(dst[di+2] * (1 - a) + hb * a));
         }
       }
     }
@@ -726,7 +744,8 @@
 
   zSlider.addEventListener("input", () => {
     stopPlayback();
-    lastThr = null; // scrub: highlight band reset
+    // Only reset highlight when the user scrubs manually.
+    if (!programmaticUpdate) lastThr = null;
     drawFrameBySlider(parseFloat(zSlider.value));
   });
 
@@ -744,6 +763,13 @@
   });
 
   highlightMode.addEventListener("change", () => {
+    if (!active) return;
+    stopPlayback();
+    lastThr = null;
+    drawFrameBySlider(parseFloat(zSlider.value));
+  });
+
+  highlightColor.addEventListener("change", () => {
     if (!active) return;
     stopPlayback();
     lastThr = null;
@@ -770,6 +796,12 @@
   // init
   resetAll();
   log("Ready. Select files…");
+
+  // Export a tiny API for the GIF exporter (same page)
+  window.__zbmp = {
+    setProgrammaticUpdate(v){ programmaticUpdate = !!v; },
+    resetHighlight(){ lastThr = null; },
+  };
 })();
 </script>
 
@@ -851,6 +883,9 @@
     // Ensure range input allows >100 so final-hold frames (103) don't get clamped.
     if (slider) slider.max = String(Math.max(103, Number(slider.max || 0)));
 
+    // Keep highlight band across frames during export (don't treat these as manual scrubs)
+    if (window.__zbmp) { window.__zbmp.resetHighlight(); window.__zbmp.setProgrammaticUpdate(true); }
+
     for(let i=0;i<=steps;i++){
       const v = (i/steps)*100; // sweep zone 0..100
       if(slider){
@@ -874,6 +909,8 @@
       slider.value = oldVal;
       slider.dispatchEvent(new Event("input"));
     }
+
+    if (window.__zbmp) window.__zbmp.setProgrammaticUpdate(false);
 
     setTimeout(()=>gif.render(), 50);
   });
