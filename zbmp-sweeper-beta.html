@@ -455,12 +455,18 @@
     const tickMs = Math.max(5, parseInt(speedMs.value, 10) || 30);
 
     timer = setInterval(() => {
-      const sv = stepIndexToSliderValue(playIndex);
+      // Sweep 0..100 for "steps" frames, then 3 extra frames in final-hold (slider=103 => BMP-only)
+      let sv;
+      if (playIndex <= steps) {
+        sv = stepIndexToSliderValue(playIndex);
+      } else {
+        sv = 103;
+      }
       zSlider.value = String(sv);
       drawFrameBySlider(sv);
 
       playIndex++;
-      if (playIndex > steps) {
+      if (playIndex > steps + 3) {
         stopPlayback();
       }
     }, tickMs);
@@ -676,7 +682,8 @@
     // slider UI
     zSlider.value = "0";
     zSlider.min = "0";
-    zSlider.max = "100";
+    // IMPORTANT: keep max at 103 so the final-hold zone (>100) can be reached in Play + GIF export
+    zSlider.max = "103";
     zSlider.step = "0.1";
     lastThr = null;
 
@@ -791,15 +798,16 @@
     }
 
     const steps = Math.max(1, Number(document.getElementById("steps")?.value || 100));
-    const speed = Math.max(1, Number(document.getElementById("speed")?.value || 30));
+    const speed = Math.max(1, Number(document.getElementById("speedMs")?.value || 30));
 
     setBtn("Rendering… 0%", true);
 
     const gif = new GIF({
-      workers: 2,
-      // higher = faster/rougher; lower = nicer/slower. This is a good middle ground.
-      quality: 20,
-      workerScript: "https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js"
+      // NOTE: Local files (file://) often block CDN workers. Using workers:0 avoids the 0% hang.
+      // If you host this over http(s) and have gif.worker.js locally, you can switch to workers:2 and set workerScript.
+      workers: 0,
+      // higher = faster/rougher; lower = nicer/slower.
+      quality: 20
     });
 
     gif.on("progress", p=>{
@@ -826,6 +834,9 @@
     const slider = document.getElementById("zSlider") || document.querySelector("input[type=range]");
     const oldVal = slider ? slider.value : null;
 
+    // Ensure range input allows >100 so final-hold frames (103) don't get clamped.
+    if (slider) slider.max = String(Math.max(103, Number(slider.max || 0)));
+
     for(let i=0;i<=steps;i++){
       const v = (i/steps)*100; // sweep zone 0..100
       if(slider){
@@ -850,7 +861,7 @@
       slider.dispatchEvent(new Event("input"));
     }
 
-    gif.render();
+    setTimeout(()=>gif.render(), 50);
   });
 })();
 </script>
