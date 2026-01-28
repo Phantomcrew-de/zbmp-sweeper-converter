@@ -3,9 +3,8 @@ ZBMP Web Sweeper & Converter
 
 This generates zbuffer-sweeping preview from ZBMP/MBMP backgrounds from Microsoft 3D Movie Maker.
 
-[▶️ Try Converter](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-converter.html) | 
-[▶️ Try Sweeper](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-sweeper.html)
-[▶️ Try Z-Pass to ZBMP](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zpass_to_zbmp-converter.html)
+| [▶️ Try Sweeper](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-sweeper.html) | [▶️ Try ZBMP to Z-Pass](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zbmp-converter.html) 
+| [▶️ Try Z-Pass to ZBMP](https://phantomcrew-de.github.io/zbmp-sweeper-converter/zpass_to_zbmp-converter.html) | [▶️ Try Pictures to 3DMM BMP](https://phantomcrew-de.github.io/zbmp-sweeper-converter/picture-to-bmp-pal-converter-3dmm.html) | 
 
 
 | RGB-Ramp | Monochrome |
