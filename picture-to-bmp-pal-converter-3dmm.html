@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Background Converter for 3D Movie Maker Scenes</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --panel: #121826;
+      --muted: #7f8aa3;
+      --fg: #e9eefc;
+      --accent: #6aa6ff;
+      --border: rgba(255,255,255,0.12);
+      --ok: #4ade80;
+      --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 20% 0%, #0f1730, var(--bg));
+      color: var(--fg);
+    }
+    header { padding: 18px 18px 8px; }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .wrap {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 14px;
+      padding: 14px 18px 20px;
+    }
+    @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: #cfe0ff;
+      letter-spacing: .2px;
+    }
+    label { font-size: 13px; color: #dbe6ff; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+    .stack { display: grid; gap: 10px; }
+    input[type="number"], input[type="text"], select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.25);
+      color: var(--fg);
+      outline: none;
+    }
+    input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px dashed var(--border);
+      background: rgba(0,0,0,0.22);
+      color: var(--muted);
+    }
+    .inline {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(106,166,255,0.15);
+      color: var(--fg);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 650;
+      letter-spacing: .2px;
+    }
+    .btn:hover { border-color: rgba(106,166,255,0.55); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn.secondary { background: rgba(255,255,255,0.06); }
+    .btn.ok { background: rgba(74,222,128,0.16); }
+    .btn.warn { background: rgba(251,191,36,0.16); }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .radio {
+      display: grid;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.18);
+    }
+    .radio label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      cursor: pointer;
+    }
+    .radio input { transform: translateY(1px); }
+    .palette {
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .pal-grid {
+      display: grid;
+      grid-template-columns: repeat(18, 1fr);
+      gap: 6px;
+      max-height: 330px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .sw {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.14);
+      overflow: hidden;
+      position: relative;
+    }
+    .sw input[type="color"] {
+      width: 140%;
+      height: 140%;
+      border: none;
+      background: transparent;
+      transform: translate(-10%, -10%);
+      cursor: pointer;
+      padding: 0;
+    }
+    .progress {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(106,166,255,0.25), rgba(106,166,255,0.9));
+      transition: width .15s ease;
+    }
+    .log {
+      white-space: pre-wrap;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      color: #cfe0ff;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .pill {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    canvas { display:none; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Background Converter for 3D Movie Maker Scenes</h1>
+    <p class="sub">
+      Defaults: <span class="pill">544×306</span> · <span class="pill">236 colors</span> · default palette: <span class="pill">65540.GLCR.PAL</span> · optional dithering (Floyd–Steinberg)
+    </p>
+  </header>
+
+  <div class="wrap">
+    <section class="card">
+      <h2>1) Files</h2>
+      <div class="stack">
+        <div>
+          <label>Select image(s) (PNG/JPG/WebP/GIF/BMP/…)</label>
+          <input id="imgFiles" type="file" accept="image/*" multiple/>
+          <div class="hint">Multiple files ⇒ ZIP download. Single file ⇒ direct downloads.</div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Output width</label>
+            <input id="outW" type="number" min="1" value="544"/>
+          </div>
+          <div>
+            <label>Output height</label>
+            <input id="outH" type="number" min="1" value="306"/>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="radio">
+            <label><input id="fitStretch" type="radio" name="fitmode" checked/> Stretch (exact 544×306)</label>
+            <label><input id="fitContain" type="radio" name="fitmode"/> Contain (keep aspect, letterbox)</label>
+            <label><input id="fitCover" type="radio" name="fitmode"/> Cover (keep aspect, crop)</label>
+          </div>
+          <div class="radio">
+            <label><input id="dither" type="checkbox" checked/> Enable dithering</label>
+            <label class="small">Strength (0–1)</label>
+            <input id="ditherStrength" type="number" min="0" max="1" step="0.05" value="1"/>
+            <div class="hint">Dithering improves gradients with small palettes, but can add noise.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label>Palette size</label>
+            <input id="palSize" type="number" min="2" max="256" value="236"/>
+            <div class="hint">Max 256 for 8‑bit BMP. (Default: 236)</div>
+          </div>
+          <div class="radio">
+            <label><input id="includePalInZip" type="checkbox" checked/> Include palette file(s)</label>
+            <label><input id="palPerImage" type="checkbox"/> With Auto Palette: one .PAL per image</label>
+          </div>
+        </div>
+
+        <div class="inline">
+          <button class="btn ok" id="convertBtn" disabled>Convert & Download</button>
+          <button class="btn secondary" id="downloadPaletteBtn">Download current palette as .PAL</button>
+          <span class="pill" id="statusPill">ready</span>
+        </div>
+
+        <div class="progress" aria-label="Progress"><div class="bar" id="bar"></div></div>
+      </div>
+    </section>
+
+    <aside class="card">
+      <h2>2) Palette</h2>
+
+      <div class="radio">
+        <label><input type="radio" name="palmode" id="useDefaultPal" checked/> Default (65540.GLCR.PAL)</label>
+        <label><input type="radio" name="palmode" id="useImportedPal"/> Imported .PAL</label>
+        <label><input type="radio" name="palmode" id="useAutoPal"/> Auto Palette (Median Cut)</label>
+        <div class="hint">
+          Auto Palette creates a palette from the image with <b>N colors</b> (palette size) and can optionally export a matching <b>.PAL</b>.
+        </div>
+      </div>
+
+      <div class="palette">
+        <div>
+          <label>Import .PAL (RIFF PAL / “PAL data”)</label>
+          <input id="palFile" type="file" accept=".pal"/>
+          <div class="hint">The default palette is embedded. Import populates “Imported .PAL”.</div>
+        </div>
+
+        <div class="row">
+          <div class="inline">
+            <button class="btn warn" id="regenPalBtn">Regenerate palette from first image</button>
+            <span class="hint">only useful when “Auto Palette” is selected</span>
+          </div>
+          <div class="inline">
+            <button class="btn secondary" id="resetDefaultBtn">Reset to default palette</button>
+          </div>
+        </div>
+
+        <div>
+          <label>Edit palette (click a swatch)</label>
+          <div class="pal-grid" id="palGrid"></div>
+          <div class="hint">Tip: If you edit the palette manually, use “Download current palette as .PAL”.</div>
+        </div>
+
+        <div>
+          <label>Log</label>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <canvas id="work"></canvas>
+
+  <!-- JSZip for ZIP downloads -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <script>
+  // =========================
+  // Utilities
+  // =========================
+  const $ = (id) => document.getElementById(id);
+  const logEl = $("log");
+  const barEl = $("bar");
+  const statusPill = $("statusPill");
+
+  function log(msg) {
+    logEl.textContent += msg + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setStatus(text, kind="") {
+    statusPill.textContent = text;
+    statusPill.style.color = (kind==="ok") ? "var(--ok)" : (kind==="warn" ? "var(--warn)" : "");
+  }
+  function setProgress(p) {
+    barEl.style.width = Math.max(0, Math.min(1, p)) * 100 + "%";
+  }
+  function clamp(x, a, b) { return Math.min(b, Math.max(a, x)); }
+  function toHex2(v) { return v.toString(16).padStart(2, "0"); }
+  function rgbToHex(r,g,b) { return "#" + toHex2(r) + toHex2(g) + toHex2(b); }
+  function hexToRgb(hex) {
+    const h = hex.replace("#","");
+    return {
+      r: parseInt(h.slice(0,2),16),
+      g: parseInt(h.slice(2,4),16),
+      b: parseInt(h.slice(4,6),16),
+    };
+  }
+  function downloadBlob(blob, filename) {
+    const a = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+  function sanitizeName(name) {
+    return name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_\-\.]+/gi, "_");
+  }
+
+  // =========================
+  // RIFF .PAL (Microsoft) parse/write
+  // =========================
+  function parseRiffPal(arrayBuffer) {
+    const dv = new DataView(arrayBuffer);
+    function readStr(off, n) {
+      let s = "";
+      for (let i=0;i<n;i++) s += String.fromCharCode(dv.getUint8(off+i));
+      return s;
+    }
+    if (readStr(0,4) !== "RIFF") throw new Error("Not a RIFF file.");
+    if (readStr(8,4) !== "PAL ") throw new Error("Not a RIFF 'PAL ' file.");
+    const chunkId = readStr(12,4);
+    if (chunkId !== "data") throw new Error("Missing 'data' chunk.");
+    const ver = dv.getUint16(20, true);
+    const count = dv.getUint16(22, true);
+    if (ver !== 0x0300) {
+      log("Note: .PAL version is 0x" + ver.toString(16) + " (expected 0x0300).");
+    }
+    const colors = [];
+    let off = 24;
+    for (let i=0;i<count;i++) {
+      const r = dv.getUint8(off+0);
+      const g = dv.getUint8(off+1);
+      const b = dv.getUint8(off+2);
+      colors.push([r,g,b]);
+      off += 4;
+    }
+    return colors;
+  }
+
+  function writeRiffPal(colors) {
+    const n = colors.length;
+    const dataChunkSize = 4 + n*4;
+    const riffSize = 4 + (8 + dataChunkSize);
+    const buf = new ArrayBuffer(8 + riffSize);
+    const dv = new DataView(buf);
+    function writeStr(off, s) {
+      for (let i=0;i<s.length;i++) dv.setUint8(off+i, s.charCodeAt(i));
+    }
+    writeStr(0,"RIFF");
+    dv.setUint32(4, riffSize, true);
+    writeStr(8,"PAL ");
+    writeStr(12,"data");
+    dv.setUint32(16, dataChunkSize, true);
+    dv.setUint16(20, 0x0300, true);
+    dv.setUint16(22, n, true);
+    let off = 24;
+    for (let i=0;i<n;i++) {
+      const [r,g,b] = colors[i];
+      dv.setUint8(off+0, r);
+      dv.setUint8(off+1, g);
+      dv.setUint8(off+2, b);
+      dv.setUint8(off+3, 0);
+      off += 4;
+    }
+    return new Blob([buf], {type:"application/octet-stream"});
+  }
+
+  // =========================
+  // Embedded default palette (65540.GLCR.PAL)
+  // =========================
+  const DEFAULT_PAL_B64 = "UklGRhQEAABQQUwgZGF0YQgEAAAAAwAB/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AFRDsQAAf38A7+/vABAQEAAVFRUACwsLABsbGwAsLCwASUlJAGZmZgBzc3MAgICAAJSUlACrq6sAtra2AMTExADR0dEA3t7eAOnp6QDx8fEA+fn5ABcXLwAbGzYAGB9DACEsXAA0P4sASkGgAFRJtABnXMsAdmzQAH1a9QCHZ/UAjnH3AId6+gCjhfwAtJv9ALqw/QAsGxAARSoZAGtEJwCRXTYAsXJCAMmASwDdjFIA6JVVAOihWwDosWAA6LZqAOjAZwDowHAA6MhvAOjQcADoz3oAOAsKAFQaGAB3HBwAjRgMAKseEgDOFxwA7CAgAOhCQgAUHiwAIjFIADBEZQA3TnMAPleCAEVhjwBPcKYAYoGzAIoLSgCxDmAA2RF1AOwTgADtJ4oA7jyVAPFYpQDzdrUAPxoBAGgrAgCSPQMAp0UDALtOBADQVgQA72kFAPp5GwAsDDQASRNXAGYceQB2H4sAhCOcAJMnrQCpLcgAt0DVAF5HAgCIZwIAsYoDAMaaBADbtgQA8McEAPrSGwD72TkAMjIOAFRUFgB0dCEAhIQmAJWVKwClpTAAvb03AMrKSgAoGhcAQywnAF49NwBrRT8AeE9HAIZXTwCaZFoAqHVsABYyDgAlUxcANHQhADqFJQBDlSsASaYvAFW+NgBmy0kAKRYXAEUlJwBhNDYAbzw+AHxDRgCKSk0An1VZAK1nagAGOSUACmE+AA6HVgAQmmMAEq1wABTAewAW2IoAI+maACMjIwA6OjoAVFRUAFxcXAAzMzMABQQEACUZFwAxMT4ANi8eACkoHgAgFwoAO018AERBKwBHQTcAQkEgACQoEABYRzAAe29MADs+RwBYVkIAZlhDAHtoNgAqKjIAZmdKAA8WCQBXVy8ASFh+ADUiHABITzYAVkk+AHddSQBnVi8AV2OCALujdACfhE8AZ2g2ANCrfQBaRR8AnohkAKOYawA4MS0AI0EMAOvKkACTbDQAf3VfAERZIQBnboUAyot5AEgwHAA3PjcAkXFJAHhVMgChpIMAMD8hAA4pBwB6fIUAf4JAALeEcACegD8AoHJhAIWJYgBNMi4AWGcwALebWgD56JQAhIBQAO6fTgDJoloAQ3McAEdQSABkaWAA2MCJAFyJIwBmSUAAY4k7AO7qqgDRv28AQUphAJVcTgArWREAu38/AO7HcQDAwZUAua6JAPnmfAB5UB4Atn9dAH6qPwCdq00A66mNAImTeACTUCsA9vjWAKS2ZwDC5X4A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AP8A/wD/AAAAAAA=";
+  function b64ToArrayBuffer(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  let defaultPalette = [];
+  try {
+    defaultPalette = parseRiffPal(b64ToArrayBuffer(DEFAULT_PAL_B64));
+  } catch (e) {
+    console.error(e);
+  }
+
+  // current palette storage
+  let importedPalette = null; // array of [r,g,b]
+  let currentPalette = defaultPalette.slice();
+
+  function getPaletteMode() {
+    if ($("useAutoPal").checked) return "auto";
+    if ($("useImportedPal").checked) return "import";
+    return "default";
+  }
+  function getDesiredPaletteSize() {
+    return clamp(parseInt($("palSize").value || "236", 10), 2, 256);
+  }
+  function applyPaletteSize(pal, n) {
+    if (pal.length > n) return pal.slice(0, n);
+    if (pal.length < n) {
+      const out = pal.slice();
+      const last = out[out.length-1] || [0,0,0];
+      while (out.length < n) out.push(last.slice());
+      return out;
+    }
+    return pal.slice();
+  }
+
+  // =========================
+  // Palette UI
+  // =========================
+  function renderPaletteGrid(pal) {
+    const grid = $("palGrid");
+    grid.innerHTML = "";
+    const n = pal.length;
+    for (let i=0;i<n;i++) {
+      const sw = document.createElement("div");
+      sw.className = "sw";
+      const inp = document.createElement("input");
+      inp.type = "color";
+      inp.value = rgbToHex(pal[i][0], pal[i][1], pal[i][2]);
+      inp.title = "Index " + i;
+      inp.addEventListener("input", () => {
+        const c = hexToRgb(inp.value);
+        currentPalette[i] = [c.r, c.g, c.b];
+      });
+      sw.appendChild(inp);
+      grid.appendChild(sw);
+    }
+  }
+
+  function loadPalette(pal, reason="") {
+    const n = getDesiredPaletteSize();
+    currentPalette = applyPaletteSize(pal, n);
+    renderPaletteGrid(currentPalette);
+    log("Palette loaded (" + currentPalette.length + " colors)" + (reason ? (": " + reason) : ""));
+  }
+
+  loadPalette(defaultPalette, "Default (embedded)");
+
+  // =========================
+  // BMP (8-bit paletted) writer
+  // =========================
+  function writeBmp8(width, height, palette, indices) {
+    // IMPORTANT (3D Movie Maker / many legacy viewers):
+    // Even if you only *use* 236 colors, the BMP color table is often expected to be 256 entries.
+    // If we write fewer (e.g., 236), some viewers still assume 256 and will start reading pixels
+    // at the wrong offset → the image appears shifted/offset.
+    const palCount = 256;
+    const paletteOut = (palette.length >= palCount)
+      ? palette.slice(0, palCount)
+      : palette.concat(Array.from({length: palCount - palette.length}, () => (palette[palette.length-1] || [0,0,0]).slice()));
+
+    const rowSize = ((width + 3) & ~3);
+    const pixelDataSize = rowSize * height;
+
+    const fileHeaderSize = 14;
+    const dibHeaderSize = 40;
+    const colorTableSize = palCount * 4;
+    const offsetBits = fileHeaderSize + dibHeaderSize + colorTableSize;
+    const fileSize = offsetBits + pixelDataSize;
+
+    const buf = new ArrayBuffer(fileSize);
+    const dv = new DataView(buf);
+    let off = 0;
+
+    // BITMAPFILEHEADER
+    dv.setUint8(off+0, 0x42);
+    dv.setUint8(off+1, 0x4D);
+    dv.setUint32(off+2, fileSize, true);
+    dv.setUint16(off+6, 0, true);
+    dv.setUint16(off+8, 0, true);
+    dv.setUint32(off+10, offsetBits, true);
+    off += 14;
+
+    // BITMAPINFOHEADER
+    dv.setUint32(off+0, dibHeaderSize, true);
+    dv.setInt32(off+4, width, true);
+    dv.setInt32(off+8, height, true); // bottom-up
+    dv.setUint16(off+12, 1, true);
+    dv.setUint16(off+14, 8, true);
+    dv.setUint32(off+16, 0, true);
+    dv.setUint32(off+20, pixelDataSize, true);
+    dv.setInt32(off+24, 2835, true);
+    dv.setInt32(off+28, 2835, true);
+    dv.setUint32(off+32, palCount, true);
+    dv.setUint32(off+36, palCount, true);
+    off += 40;
+
+    // color table (BGRA)
+    for (let i=0;i<palCount;i++) {
+      const [r,g,b] = paletteOut[i];
+      dv.setUint8(off+0, b);
+      dv.setUint8(off+1, g);
+      dv.setUint8(off+2, r);
+      dv.setUint8(off+3, 0);
+      off += 4;
+    }
+
+    // pixel data: bottom-up + padding
+    const u8 = new Uint8Array(buf);
+    let pOff = offsetBits;
+    for (let y=height-1; y>=0; y--) {
+      const rowStart = y*width;
+      u8.set(indices.subarray(rowStart, rowStart+width), pOff);
+      pOff += width;
+      for (let k=width; k<rowSize; k++) u8[pOff++] = 0;
+    }
+
+    return new Blob([buf], {type:"image/bmp"});
+  }
+
+  // =========================
+  // Image drawing/resizing
+  // =========================
+  async function fileToImage(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+
+  function drawToCanvas(img, outW, outH, mode) {
+    const cnv = $("work");
+    cnv.width = outW;
+    cnv.height = outH;
+    const ctx = cnv.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0,0,outW,outH);
+    ctx.imageSmoothingEnabled = true;
+
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+
+    if (mode === "stretch") {
+      ctx.drawImage(img, 0, 0, outW, outH);
+    } else {
+      const scale = (mode === "contain")
+        ? Math.min(outW / iw, outH / ih)
+        : Math.max(outW / iw, outH / ih);
+      const sw = iw * scale;
+      const sh = ih * scale;
+      const dx = (outW - sw) / 2;
+      const dy = (outH - sh) / 2;
+      ctx.drawImage(img, dx, dy, sw, sh);
+    }
+
+    return ctx.getImageData(0,0,outW,outH);
+  }
+
+  // =========================
+  // Quantization (palette mapping + optional dithering)
+  // =========================
+  function nearestColorIndex(r,g,b,pal) {
+    let best = 0;
+    let bestD = 1e18;
+    for (let i=0;i<pal.length;i++) {
+      const pr = pal[i][0], pg = pal[i][1], pb = pal[i][2];
+      const dr = r - pr, dg = g - pg, db = b - pb;
+      const d = dr*dr + dg*dg + db*db;
+      if (d < bestD) { bestD = d; best = i; if (d === 0) break; }
+    }
+    return best;
+  }
+
+  function quantizeImageData(imageData, palette, useDither=true, ditherStrength=1.0) {
+    const {data, width, height} = imageData;
+    const pal = palette;
+    const out = new Uint8Array(width*height);
+
+    if (!useDither) {
+      for (let i=0, p=0; i<data.length; i+=4, p++) {
+        out[p] = nearestColorIndex(data[i], data[i+1], data[i+2], pal);
+      }
+      return out;
+    }
+
+    // Floyd–Steinberg dithering with two scanline error buffers
+    const errR = new Float32Array((width+2) * 2);
+    const errG = new Float32Array((width+2) * 2);
+    const errB = new Float32Array((width+2) * 2);
+
+    let cur = 0, nxt = 1;
+    function idx(x, which) { return which*(width+2) + (x+1); }
+
+    for (let y=0; y<height; y++) {
+      // clear next row errors
+      for (let x=-1; x<=width; x++) {
+        errR[idx(x,nxt)] = 0;
+        errG[idx(x,nxt)] = 0;
+        errB[idx(x,nxt)] = 0;
+      }
+
+      for (let x=0; x<width; x++) {
+        const p = (y*width + x);
+        const i = p*4;
+
+        let r = data[i]   + errR[idx(x,cur)] * ditherStrength;
+        let g = data[i+1] + errG[idx(x,cur)] * ditherStrength;
+        let b = data[i+2] + errB[idx(x,cur)] * ditherStrength;
+
+        r = clamp(r, 0, 255);
+        g = clamp(g, 0, 255);
+        b = clamp(b, 0, 255);
+
+        const pi = nearestColorIndex(r,g,b,pal);
+        out[p] = pi;
+
+        const pr = pal[pi][0], pg = pal[pi][1], pb = pal[pi][2];
+        const er = (r - pr), eg = (g - pg), eb = (b - pb);
+
+        // distribute error: right, down-left, down, down-right
+        errR[idx(x+1,cur)] += er * (7/16);
+        errG[idx(x+1,cur)] += eg * (7/16);
+        errB[idx(x+1,cur)] += eb * (7/16);
+
+        errR[idx(x-1,nxt)] += er * (3/16);
+        errG[idx(x-1,nxt)] += eg * (3/16);
+        errB[idx(x-1,nxt)] += eb * (3/16);
+
+        errR[idx(x,nxt)] += er * (5/16);
+        errG[idx(x,nxt)] += eg * (5/16);
+        errB[idx(x,nxt)] += eb * (5/16);
+
+        errR[idx(x+1,nxt)] += er * (1/16);
+        errG[idx(x+1,nxt)] += eg * (1/16);
+        errB[idx(x+1,nxt)] += eb * (1/16);
+      }
+
+      // swap buffers
+      const t = cur; cur = nxt; nxt = t;
+
+      // clear the row we just finished using as "next" for the upcoming iteration
+      for (let x=-1; x<=width; x++) {
+        errR[idx(x,nxt)] = 0;
+        errG[idx(x,nxt)] = 0;
+        errB[idx(x,nxt)] = 0;
+      }
+    }
+
+    return out;
+  }
+
+  // =========================
+  // Auto palette (Median Cut)
+  // =========================
+  function samplePixels(imageData, maxSamples=20000) {
+    const {data, width, height} = imageData;
+    const total = width*height;
+    const step = Math.max(1, Math.floor(total / maxSamples));
+    const pts = [];
+    for (let p=0; p<total; p+=step) {
+      const i = p*4;
+      if (data[i+3] < 10) continue; // skip near-transparent
+      pts.push([data[i], data[i+1], data[i+2]]);
+    }
+    return pts;
+  }
+
+  function medianCutPalette(points, nColors) {
+    if (!points.length) return Array.from({length:nColors}, () => [0,0,0]);
+
+    let boxes = [{pts: points}];
+
+    function boxRanges(box) {
+      let rMin=255,rMax=0,gMin=255,gMax=0,bMin=255,bMax=0;
+      for (const [r,g,b] of box.pts) {
+        if (r<rMin) rMin=r; if (r>rMax) rMax=r;
+        if (g<gMin) gMin=g; if (g>gMax) gMax=g;
+        if (b<bMin) bMin=b; if (b>bMax) bMax=b;
+      }
+      return {rMin,rMax,gMin,gMax,bMin,bMax, rRange:rMax-rMin, gRange:gMax-gMin, bRange:bMax-bMin};
+    }
+
+    while (boxes.length < nColors) {
+      boxes.sort((a,b)=> {
+        const ra = boxRanges(a), rb = boxRanges(b);
+        const ma = Math.max(ra.rRange, ra.gRange, ra.bRange);
+        const mb = Math.max(rb.rRange, rb.gRange, rb.bRange);
+        return mb - ma;
+      });
+      const box = boxes.shift();
+      if (!box || box.pts.length < 2) {
+        if (box) boxes.unshift(box);
+        break;
+      }
+      const ranges = boxRanges(box);
+      let channel = 0;
+      if (ranges.gRange >= ranges.rRange && ranges.gRange >= ranges.bRange) channel = 1;
+      else if (ranges.bRange >= ranges.rRange && ranges.bRange >= ranges.gRange) channel = 2;
+
+      box.pts.sort((p,q)=> p[channel] - q[channel]);
+      const mid = Math.floor(box.pts.length/2);
+      boxes.push({pts: box.pts.slice(0, mid)}, {pts: box.pts.slice(mid)});
+    }
+
+    const pal = [];
+    for (const box of boxes) {
+      let r=0,g=0,b=0;
+      for (const p of box.pts) { r+=p[0]; g+=p[1]; b+=p[2]; }
+      const n = Math.max(1, box.pts.length);
+      pal.push([Math.round(r/n), Math.round(g/n), Math.round(b/n)]);
+    }
+
+    while (pal.length < nColors) pal.push(pal[pal.length-1].slice());
+    if (pal.length > nColors) pal.length = nColors;
+    return pal;
+  }
+
+  // =========================
+  // Main flow
+  // =========================
+  function enableConvertIfReady() {
+    $("convertBtn").disabled = !($("imgFiles").files && $("imgFiles").files.length);
+  }
+
+  $("imgFiles").addEventListener("change", () => {
+    enableConvertIfReady();
+    log("Files selected: " + $("imgFiles").files.length);
+  });
+
+  for (const id of ["useDefaultPal","useImportedPal","useAutoPal"]) {
+    $(id).addEventListener("change", () => {
+      const mode = getPaletteMode();
+      if (mode === "default") {
+        loadPalette(defaultPalette, "Default (embedded)");
+        setStatus("default palette", "ok");
+      }
+      if (mode === "import") {
+        if (!importedPalette) {
+          log("No imported .PAL loaded yet. Please import a file.");
+          setStatus("palette missing", "warn");
+        } else {
+          loadPalette(importedPalette, "Imported");
+          setStatus("imported palette", "ok");
+        }
+      }
+      if (mode === "auto") {
+        log("Auto Palette selected. Use “Regenerate palette from first image” or start conversion.");
+        setStatus("auto palette", "ok");
+      }
+    });
+  }
+
+  $("palSize").addEventListener("change", () => {
+    const n = getDesiredPaletteSize();
+    currentPalette = applyPaletteSize(currentPalette, n);
+    renderPaletteGrid(currentPalette);
+    log("Palette size set to: " + n);
+  });
+
+  $("palFile").addEventListener("change", async () => {
+    const f = $("palFile").files[0];
+    if (!f) return;
+    try {
+      const buf = await f.arrayBuffer();
+      importedPalette = parseRiffPal(buf);
+      $("useImportedPal").checked = true;
+      loadPalette(importedPalette, "Import: " + f.name);
+      setStatus("palette imported", "ok");
+    } catch (e) {
+      console.error(e);
+      log("PAL import failed: " + e.message);
+      setStatus("PAL import failed", "warn");
+    }
+  });
+
+  $("resetDefaultBtn").addEventListener("click", () => {
+    $("useDefaultPal").checked = true;
+    loadPalette(defaultPalette, "Reset to default");
+    setStatus("default palette", "ok");
+  });
+
+  $("downloadPaletteBtn").addEventListener("click", () => {
+    try {
+      const blob = writeRiffPal(currentPalette);
+      downloadBlob(blob, "palette_" + currentPalette.length + ".pal");
+    } catch (e) {
+      log("Palette download failed: " + e.message);
+    }
+  });
+
+  $("regenPalBtn").addEventListener("click", async () => {
+    if (!$("useAutoPal").checked) {
+      log("Note: Auto Palette is not selected.");
+      setStatus("auto palette not selected", "warn");
+      return;
+    }
+    const files = $("imgFiles").files;
+    if (!files || !files.length) {
+      log("Please select an image first.");
+      return;
+    }
+    setStatus("generating palette…");
+    setProgress(0.05);
+    try {
+      const img = await fileToImage(files[0]);
+      const outW = parseInt($("outW").value||"544",10);
+      const outH = parseInt($("outH").value||"306",10);
+      const mode = $("fitStretch").checked ? "stretch" : ($("fitContain").checked ? "contain" : "cover");
+      const id = drawToCanvas(img, outW, outH, mode);
+      const pts = samplePixels(id, 25000);
+      const n = getDesiredPaletteSize();
+      const pal = medianCutPalette(pts, n);
+      loadPalette(pal, "Auto from first image");
+      setStatus("auto palette ready", "ok");
+    } catch (e) {
+      console.error(e);
+      log("Auto palette failed: " + e.message);
+      setStatus("auto palette failed", "warn");
+    } finally {
+      setProgress(0);
+    }
+  });
+
+  async function convertOne(file, paletteMode, sharedAutoPalette=null) {
+    const outW = parseInt($("outW").value||"544",10);
+    const outH = parseInt($("outH").value||"306",10);
+    const mode = $("fitStretch").checked ? "stretch" : ($("fitContain").checked ? "contain" : "cover");
+    const useDither = $("dither").checked;
+    const dStr = clamp(parseFloat($("ditherStrength").value||"1"), 0, 1);
+    const n = getDesiredPaletteSize();
+
+    const img = await fileToImage(file);
+    const id = drawToCanvas(img, outW, outH, mode);
+
+    let pal = null;
+    if (paletteMode === "default") {
+      pal = applyPaletteSize(defaultPalette, n);
+    } else if (paletteMode === "import") {
+      if (!importedPalette) throw new Error("No imported palette loaded.");
+      pal = applyPaletteSize(importedPalette, n);
+    } else {
+      pal = sharedAutoPalette;
+      if (!pal) {
+        const pts = samplePixels(id, 25000);
+        pal = medianCutPalette(pts, n);
+      }
+    }
+
+    currentPalette = pal.slice();
+    renderPaletteGrid(currentPalette);
+
+    const indices = quantizeImageData(id, pal, useDither, dStr);
+    const bmpBlob = writeBmp8(outW, outH, pal, indices);
+    const palBlob = writeRiffPal(pal);
+
+    return { bmpBlob, palBlob, outW, outH, pal };
+  }
+
+  $("convertBtn").addEventListener("click", async () => {
+    const files = $("imgFiles").files;
+    if (!files || !files.length) return;
+
+    log("—");
+    log("Start: conversion (" + files.length + " file(s))");
+    setStatus("converting…");
+    setProgress(0.02);
+
+    const paletteMode = getPaletteMode();
+    const includePal = $("includePalInZip").checked;
+    const palPerImage = $("palPerImage").checked;
+
+    try {
+      let sharedAutoPalette = null;
+      if (paletteMode === "auto" && !palPerImage) {
+        const first = files[0];
+        log("Auto Palette: generating once from the first image (batch).");
+        const tmp = await convertOne(first, "auto", null);
+        sharedAutoPalette = tmp.pal;
+      }
+
+      if (files.length === 1) {
+        setProgress(0.35);
+        const res = await convertOne(files[0], paletteMode, sharedAutoPalette);
+        const base = sanitizeName(files[0].name);
+        downloadBlob(res.bmpBlob, base + "_" + res.outW + "x" + res.outH + ".bmp");
+        if (includePal) downloadBlob(res.palBlob, base + "_" + res.pal.length + ".pal");
+        setStatus("done", "ok");
+        log("Done: " + base);
+        setProgress(0);
+        return;
+      }
+
+      const zip = new JSZip();
+      for (let i=0;i<files.length;i++) {
+        const f = files[i];
+        setProgress((i / files.length) * 0.85 + 0.1);
+        log("→ " + f.name);
+
+        const useShared = (paletteMode === "auto" && sharedAutoPalette && !palPerImage) ? sharedAutoPalette : null;
+        const res = await convertOne(f, paletteMode, useShared);
+
+        const base = sanitizeName(f.name);
+        zip.file(base + "_" + res.outW + "x" + res.outH + ".bmp", res.bmpBlob);
+
+        if (includePal) {
+          if (paletteMode === "auto" && palPerImage) {
+            zip.file(base + "_" + res.pal.length + ".pal", res.palBlob);
+          } else {
+            const palName = "palette_" + res.pal.length + ".pal";
+            if (!zip.file(palName)) zip.file(palName, res.palBlob);
+          }
+        }
+      }
+
+      setStatus("creating ZIP…");
+      setProgress(0.97);
+      const blob = await zip.generateAsync({type:"blob"}, (meta) => {
+        setProgress(0.9 + (meta.percent/100)*0.1);
+      });
+      downloadBlob(blob, "bmps_" + new Date().toISOString().slice(0,10) + ".zip");
+      setStatus("done", "ok");
+      log("ZIP ready.");
+    } catch (e) {
+      console.error(e);
+      log("Error: " + e.message);
+      setStatus("error", "warn");
+    } finally {
+      setProgress(0);
+    }
+  });
+
+  enableConvertIfReady();
+  setStatus("ready");
+  log("Default palette embedded: " + defaultPalette.length + " colors (file: 65540.GLCR.PAL).");
+  </script>
+</body>
+</html>
